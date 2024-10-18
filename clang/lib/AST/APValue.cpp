@@ -443,6 +443,10 @@ void APValue::DestroyDataAndMakeUninit() {
     ((AddrLabelDiffData *)(char *)&Data)->~AddrLabelDiffData();
   else if (Kind == Reflection)
     ((ReflectionData *)(char *)&Data)->~ReflectionData();
+  // TODO(dhollman) Something here when we stop allocating TokenInfoStorage in
+  // the ASTContext
+  // else if (Kind == TokenSequence)
+  //   ((TokenInfoStorage *)(char *)&Data)->~TokenInfoStorage();
   Kind = None;
 }
 
@@ -849,7 +853,8 @@ static QualType ComputeLValueType(const APValue &V) {
 
 APValue APValue::Lift(QualType ResultType) const {
   assert(ReflectionDepth <
-         std::numeric_limits<decltype(ReflectionDepth)>::max());
+             std::numeric_limits<decltype(ReflectionDepth)>::max() &&
+         "maximum reflection depth exceeded");
 
   // TODO: Special case for lvalues referring to functions?
   //       Should be "promoted" to a reflection of the function declaration.
@@ -1643,4 +1648,14 @@ void APValue::setReflection(ReflectionKind RK, const void *Ptr) {
     return;
   }
   assert(RK == ReflectionKind::Null && "unknown reflection kind");
+}
+
+void APValue::MakeTokenSequence() {
+  assert(isAbsent() && "Bad state change");
+  Kind = TokenSequence;
+}
+
+void APValue::setTokenSequence(TokenSequenceStorage *TS) {
+  TokenSequenceStorage *&SelfData = *((TokenSequenceStorage **)(char *)&Data);
+  SelfData = TS;
 }

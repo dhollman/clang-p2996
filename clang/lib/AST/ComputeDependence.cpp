@@ -940,6 +940,7 @@ ExprDependence clang::computeDependence(ConceptSpecializationExpr *E,
   return Res;
 }
 
+// TODO(dhollman) I need an overload like this for CXXTokenSequenceExpr
 ExprDependence clang::computeDependence(CXXReflectExpr *E,
                                         const ASTContext &Ctx) {
   if (E->hasDependentSubExpr())

@@ -2996,6 +2996,8 @@ DEF_TRAVERSE_STMT(CXXReflectExpr, {
   }
 })
 DEF_TRAVERSE_STMT(CXXMetafunctionExpr, {})
+DEF_TRAVERSE_STMT(CXXTokenSequenceExpr,
+                  {/* TODO(dhollman) figure out what to do here */})
 DEF_TRAVERSE_STMT(CXXSpliceSpecifierExpr, {
   TRY_TO(TraverseStmt(S->getOperand()));
 })

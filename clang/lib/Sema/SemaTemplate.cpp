@@ -7524,6 +7524,7 @@ static Expr *BuildExpressionFromIntegralTemplateArgumentValue(
   return E;
 }
 
+// TODO(dhollman) Figure out what the equivalent of this is for Token Sequences
 static ExprResult
 BuildExpressionFromReflection(Sema &S, const APValue &RV, SourceLocation Loc) {
   return CXXReflectExpr::Create(S.Context, Loc, SourceRange {Loc, Loc}, RV);

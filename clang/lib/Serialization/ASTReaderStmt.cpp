@@ -510,6 +510,22 @@ void ASTStmtReader::VisitCXXReflectExpr(CXXReflectExpr *E) {
   }
 }
 
+void ASTStmtReader::VisitCXXTokenSequenceExpr(CXXTokenSequenceExpr *E) {
+  // TODO(dhollman) Implement this
+  // VisitExpr(E);
+  // E->setOperatorLoc(Record.readSourceLocation());
+
+  // if (Record.readBool()) {
+  //   Expr *DepSubExpr = Record.readExpr();
+
+  //   E->setDependentSubExpr(DepSubExpr);
+  //   E->setOperandRange(DepSubExpr->getSourceRange());
+  // } else {
+  //   E->setAPValue(Record.readAPValue());
+  //   E->setOperandRange(Record.readSourceRange());
+  // }
+}
+
 void ASTStmtReader::VisitCXXMetafunctionExpr(CXXMetafunctionExpr *E) {
   VisitExpr(E);
   E->setKwLoc(Record.readSourceLocation());

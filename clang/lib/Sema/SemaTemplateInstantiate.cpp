@@ -1565,6 +1565,10 @@ namespace {
     ExprResult TransformPredefinedExpr(PredefinedExpr *E);
     ExprResult TransformDeclRefExpr(DeclRefExpr *E);
     ExprResult TransformCXXReflectExpr(CXXReflectExpr *E);
+    ExprResult TransformCXXTokenSequenceExpr(CXXTokenSequenceExpr *E) {
+      // TODO(dhollman) Implement this
+      return ExprError();
+    };
     ExprResult TransformCXXDefaultArgExpr(CXXDefaultArgExpr *E);
 
     ExprResult TransformTemplateParmRefExpr(Expr *E,

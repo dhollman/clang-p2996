@@ -5580,6 +5580,65 @@ public:
   }
 };
 
+class CXXTokenSequenceExpr : public Expr {
+  // TODO(dhollman) we'll eventually need to make this have a trailingObjects.
+  // (See ConstantExpr for an example)
+  // TODO(dhollman) we'll eventually need to handle dependent expressions here
+  // just like in CXXReflectExpr because of interpolators
+  enum class OperandKind { Unset, Tokens, DependentExpr };
+
+  // The operand of the expression.
+  OperandKind Kind;
+  llvm::AlignedCharArrayUnion<APValue, Expr *> Operand;
+
+  SourceLocation BeginLoc;
+  SourceLocation EndLoc;
+
+  CXXTokenSequenceExpr(const ASTContext &C, APValue Tokens);
+
+  // TODO(dhollman) finish this
+  // CXXTokenSequenceExpr(EmptyShell Empty);
+public:
+  // Op is the location of the ^^
+  // OpRange is from { to }
+  static CXXTokenSequenceExpr *Create(ASTContext &C, SourceLocation Op,
+                                      SourceRange OperandRange, APValue Tokens);
+
+  SourceLocation getBeginLoc() const { return BeginLoc; }
+
+  SourceLocation getEndLoc() const { return EndLoc; }
+
+  SourceRange getSourceRange() const {
+    return SourceRange(getBeginLoc(), getEndLoc());
+  }
+
+  APValue getAPValue() const {
+    assert(Kind == OperandKind::Tokens);
+    return *(const APValue *)(const char *)&Operand;
+  }
+
+  void setAPValue(APValue RV) {
+    assert(Kind == OperandKind::Unset || Kind == OperandKind::Tokens);
+    Kind = OperandKind::Tokens;
+    new ((void *)&Operand) APValue(RV);
+  }
+
+  void setBeginLoc(SourceLocation Loc) { BeginLoc = Loc; }
+  void setEndLoc(SourceLocation Loc) { EndLoc = Loc; }
+
+  child_range children() {
+    return child_range(child_iterator(), child_iterator());
+  }
+
+  const_child_range children() const {
+    return const_child_range(const_child_iterator(), const_child_iterator());
+  }
+
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == CXXTokenSequenceExprClass;
+  }
+};
+
 // Implementation detail of the 'is_accessible' metafunction.
 // Used to "reach up the stack" to find the context from which the metafunction
 // was called, such that the accessibility of a class member can thereafter be

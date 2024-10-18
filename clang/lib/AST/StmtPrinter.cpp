@@ -2654,6 +2654,11 @@ void StmtPrinter::VisitCXXMetafunctionExpr(CXXMetafunctionExpr *S) {
   OS << ")";
 }
 
+void StmtPrinter::VisitCXXTokenSequenceExpr(CXXTokenSequenceExpr *S) {
+  // FIXME: Make this better.
+  OS << "^(...)";
+}
+
 void StmtPrinter::VisitCXXSpliceSpecifierExpr(CXXSpliceSpecifierExpr *S) {
   OS << "[: ";
   Visit(S->getOperand());

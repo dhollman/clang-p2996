@@ -2243,3 +2243,22 @@ CXXFoldExpr::CXXFoldExpr(QualType T, UnresolvedLookupExpr *Callee,
   SubExprs[SubExpr::RHS] = RHS;
   setDependence(computeDependence(this));
 }
+
+CXXTokenSequenceExpr::CXXTokenSequenceExpr(const ASTContext &C, APValue Tokens)
+    : Expr(CXXTokenSequenceExprClass, C.MetaInfoTy, VK_PRValue, OK_Ordinary),
+      Kind(OperandKind::Tokens) {
+        setAPValue(std::move(Tokens));
+      }
+
+CXXTokenSequenceExpr *CXXTokenSequenceExpr::Create(ASTContext &C,
+                                                   SourceLocation Op,
+                                                   SourceRange OperandRange,
+                                                   APValue Tokens) {
+  void *Mem =
+      C.Allocate(sizeof(CXXTokenSequenceExpr), alignof(CXXTokenSequenceExpr));
+  CXXTokenSequenceExpr &E =
+      *new (Mem) CXXTokenSequenceExpr(C, std::move(Tokens));
+  E.BeginLoc = Op;
+  E.EndLoc = OperandRange.getEnd();
+  return &E;
+}

@@ -480,6 +480,10 @@ void ASTStmtWriter::VisitCXXReflectExpr(CXXReflectExpr *E) {
   Code = serialization::EXPR_REFLECT;
 }
 
+void ASTStmtWriter::VisitCXXTokenSequenceExpr(CXXTokenSequenceExpr *E) {
+  // TODO(dhollman): implement this
+}
+
 void ASTStmtWriter::VisitCXXMetafunctionExpr(CXXMetafunctionExpr *E) {
   VisitExpr(E);
   Record.AddSourceLocation(E->getKwLoc());

@@ -15207,6 +15207,10 @@ public:
   bool ActOnCXXNestedNameSpecifierReflectionSplice(
       CXXScopeSpec &SS, CXXSpliceSpecifierExpr *Splice,
       SourceLocation ColonColonLoc);
+  ExprResult ActOnCXXTokenSequenceExpr(SourceLocation KWLoc,
+                                       SourceLocation LParenLoc,
+                                       CachedTokens Tokens,
+                                       SourceLocation RParenLoc);
 
   ExprResult ActOnMemberAccessExpr(Scope *S, Expr *Base,
                                    SourceLocation OpLoc,

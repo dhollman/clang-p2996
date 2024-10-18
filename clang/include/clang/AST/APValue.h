@@ -148,6 +148,7 @@ public:
     MemberPointer,
     AddrLabelDiff,
     Reflection,
+    TokenSequence,
   };
 
   class LValueBase {
@@ -320,7 +321,8 @@ private:
   typedef llvm::AlignedCharArrayUnion<void *, APSInt, APFloat, ComplexAPSInt,
                                       ComplexAPFloat, Vec, Arr, StructData,
                                       UnionData, AddrLabelDiffData,
-                                      ReflectionData> DataType;
+                                      ReflectionData, TokenSequenceStorage *>
+      DataType;
   static const size_t DataSize = sizeof(DataType);
 
   DataType Data;
@@ -394,6 +396,11 @@ public:
   APValue(ReflectionKind RK, const void *Data)
       : Kind(None), UnderlyingTy(), ReflectionDepth() {
     MakeReflection(); setReflection(RK, Data);
+  }
+  explicit APValue(TokenSequenceStorage *Tokens)
+      : Kind(None), UnderlyingTy(), ReflectionDepth() {
+    MakeTokenSequence();
+    setTokenSequence(Tokens);
   }
   static APValue IndeterminateValue() {
     APValue Result;
@@ -487,6 +494,9 @@ public:
   }
   bool isReflectedAnnotation() const {
     return isReflection() && getReflectionKind() == ReflectionKind::Annotation;
+  }
+  bool isTokenSequence() const {
+    return !isReflection() && Kind == TokenSequence;
   }
 
   void dump() const;
@@ -662,6 +672,10 @@ public:
     assert(Kind == AddrLabelDiff && "Invalid accessor");
     return ((const AddrLabelDiffData *)(const char *)&Data)->RHSExpr;
   }
+  const TokenSequenceStorage *getTokenSequence() const {
+    assert(Kind == TokenSequence && "Invalid accessor");
+    return *(TokenSequenceStorage *const *)&Data;
+  }
 
   unsigned getReflectionDepth() const { return ReflectionDepth; }
   QualType getTypeOfReflectedResult(const ASTContext &Ctx) const;
@@ -722,6 +736,7 @@ public:
     ((AddrLabelDiffData *)(char *)&Data)->RHSExpr = RHSExpr;
   }
   void setReflection(ReflectionKind RK, const void *Data);
+  void setTokenSequence(TokenSequenceStorage *Tokens);
 
 private:
   void DestroyDataAndMakeUninit();
@@ -780,6 +795,8 @@ private:
     new ((void*)(char *)&Data) ReflectionData();
     Kind = Reflection;
   }
+
+  void MakeTokenSequence();
 
 private:
   /// The following functions are used as part of initialization, during

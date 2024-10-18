@@ -2340,6 +2340,11 @@ void StmtProfiler::VisitCXXReflectExpr(const CXXReflectExpr *E) {
   }
 }
 
+void StmtProfiler::VisitCXXTokenSequenceExpr(const CXXTokenSequenceExpr *E) {
+  VisitExpr(E);
+  // TODO(dhollman) implement this
+}
+
 void StmtProfiler::VisitCXXMetafunctionExpr(const CXXMetafunctionExpr *E) {
   VisitExpr(E);
 }

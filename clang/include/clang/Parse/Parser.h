@@ -3961,6 +3961,7 @@ private:
   //===--------------------------------------------------------------------===//
   // C++2c: Reflection [P2996]
   ExprResult ParseCXXReflectExpression(SourceLocation OpLoc);
+  ExprResult ParseCXXTokenSequenceExpression(SourceLocation OpLoc);
   ExprResult ParseCXXMetafunctionExpression();
 
   bool ParseCXXSpliceSpecifier(SourceLocation TemplateKWLoc = {});

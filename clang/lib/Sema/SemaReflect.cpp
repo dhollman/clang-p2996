@@ -971,6 +971,16 @@ bool Sema::ActOnCXXNestedNameSpecifierReflectionSplice(
   return false;
 }
 
+ExprResult Sema::ActOnCXXTokenSequenceExpr(SourceLocation KWLoc,
+                                           SourceLocation LParenLoc,
+                                           CachedTokens Tokens,
+                                           SourceLocation RParenLoc) {
+
+  TokenSequenceStorage *TSS = TokenSequenceStorage::Create(Context, Tokens);
+  APValue TokensValue(TSS);
+  return CXXTokenSequenceExpr::Create(Context, KWLoc, LParenLoc, TokensValue);
+}
+
 ExprResult Sema::BuildCXXReflectExpr(SourceLocation OperatorLoc,
                                      SourceLocation OperandLoc, QualType T) {
   APValue RV(ReflectionKind::Type, T.getAsOpaquePtr());
