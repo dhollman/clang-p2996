@@ -4469,16 +4469,8 @@ LexStart:
     }
 
     if (LangOpts.Reflection) {
-      // Char = getCharAndSize(CurPtr, SizeTmp);
-      // TODO(dhollman) handle interpolators here
-      // if (Char == '(') {
-      //   Kind = tok::l_exprinterp;
-      //   CurPtr = ConsumeChar(CurPtr, SizeTmp, Result);
-      //   break;
-      // } else {
-      //   Kind = tok::backslash;
-      //   break;
-      // }
+      Kind = tok::backslash;
+      break;
     }
 
     Kind = tok::unknown;

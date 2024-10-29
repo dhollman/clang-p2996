@@ -21,7 +21,10 @@
 #include "clang/AST/Expr.h"
 #include "clang/AST/ExprCXX.h"
 #include "clang/AST/LocInfoType.h"
+#include "clang/AST/Reflection.h"
 #include "clang/AST/Type.h"
+#include "clang/Lex/Token.h"
+#include "llvm/ADT/ArrayRef.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/raw_ostream.h"
 using namespace clang;
@@ -386,6 +389,11 @@ APValue::APValue(const APValue &RHS)
     setReflection(((const ReflectionData *)(const char *)&RHS.Data)->Kind,
                   RHS.getOpaqueReflectionData());
     break;
+  case TokenSequence:
+    // TODO(dhollman) const correctness?
+    MakeTokenSequence(RHS.getTokenSequenceTokens(),
+                      RHS.getTokenSequenceInterpolators());
+    break;
   }
   ReflectionDepth = RHS.ReflectionDepth;
   UnderlyingTy = RHS.UnderlyingTy;
@@ -462,6 +470,8 @@ bool APValue::needsCleanup() const {
   case Vector:
   case Reflection:
     return true;
+  case TokenSequence:
+    return false;
   case Int:
     return getInt().needsCleanup();
   case Float:
@@ -719,6 +729,9 @@ void APValue::Profile(llvm::FoldingSetNodeID &ID) const {
     return;
   case Reflection:
     profileReflection(ID, *this);
+    return;
+  case TokenSequence:
+    // TODO(dhollman) write this
     return;
   }
 
@@ -1267,7 +1280,7 @@ void APValue::printPretty(raw_ostream &Out, const PrintingPolicy &Policy,
     Out << " - ";
     Out << "&&" << getAddrLabelDiffRHS()->getLabel()->getName();
     return;
-  case APValue::Reflection:
+  case APValue::Reflection: {
     std::string Repr("unknown-reflection");
     switch (getReflectionKind()) {
     case ReflectionKind::Null:
@@ -1303,6 +1316,14 @@ void APValue::printPretty(raw_ostream &Out, const PrintingPolicy &Policy,
     }
     Out << "^^(" << Repr << ")";
     return;
+  }
+  case APValue::TokenSequence: {
+    // TODO(dhollman) write this
+    // for (const TokenInfoStorage &T : getTokenSequence()->getTokens())
+    //   Out << ((const Token *)(const char *)(&T.Tok))->getName() << " ";
+    Out << "<token-sequence>";
+    return;
+  }
   }
   llvm_unreachable("Unknown APValue kind!");
 }
@@ -1498,6 +1519,7 @@ LinkageInfo LinkageComputer::getLVForValue(const APValue &V,
   case APValue::ComplexFloat:
   case APValue::Vector:
   case APValue::Reflection:
+  case APValue::TokenSequence:
     break;
 
   case APValue::AddrLabelDiff:
@@ -1650,12 +1672,17 @@ void APValue::setReflection(ReflectionKind RK, const void *Ptr) {
   assert(RK == ReflectionKind::Null && "unknown reflection kind");
 }
 
-void APValue::MakeTokenSequence() {
+void APValue::MakeTokenSequence(ArrayRef<Token> Tokens,
+                                ArrayRef<APValue> ResolvedInterps) {
   assert(isAbsent() && "Bad state change");
   Kind = TokenSequence;
+  setTokenSequence(Tokens, ResolvedInterps);
 }
 
-void APValue::setTokenSequence(TokenSequenceStorage *TS) {
-  TokenSequenceStorage *&SelfData = *((TokenSequenceStorage **)(char *)&Data);
-  SelfData = TS;
+void APValue::setTokenSequence(ArrayRef<Token> Tokens,
+                               ArrayRef<APValue> ResolvedInterps) {
+  assert((isAbsent() || isTokenSequence()) && "Bad state change");
+  Kind = TokenSequence;
+  new ((TokenSequenceData *)(char *)&Data)
+      TokenSequenceData(Tokens, ResolvedInterps);
 }

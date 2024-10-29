@@ -22,6 +22,7 @@
 #include "clang/Basic/Module.h"
 #include "clang/Basic/SourceManager.h"
 #include "clang/Basic/Specifiers.h"
+#include "clang/Basic/TokenKinds.h"
 #include "clang/Basic/TypeTraits.h"
 #include "llvm/ADT/StringExtras.h"
 
@@ -566,6 +567,7 @@ static bool isSimpleAPValue(const APValue &Value) {
   case APValue::Array:
   case APValue::Struct:
   case APValue::Reflection:
+  case APValue::TokenSequence:
     return false;
   case APValue::Union:
     return isSimpleAPValue(Value.getUnionValue());
@@ -679,6 +681,30 @@ void TextNodeDumper::Visit(const APValue &Value, QualType Ty) {
     return;
   case APValue::LValue:
     (void)Context;
+    if (Value.getLValueBase().is<DynamicAllocLValue>()) {
+      OS << "LValue <DynamicAllocLValue, type=";
+      // TODO color?!?
+      OS << Value.getLValueBase().getDynamicAllocType().getAsString() << ">";
+      return;
+    } else if (Value.getLValueBase().is<const ValueDecl *>()) {
+      OS << "LValue <ValueDecl*, ";
+      Value.getLValueBase().get<const ValueDecl *>()->dump(OS);
+      OS << ">";
+      return;
+    } else if (Value.getLValueBase().is<const Expr *>()) {
+      const Expr *E = Value.getLValueBase().get<const Expr *>();
+      OS << "LValue <Expr*, type=";
+      OS << E->getType().getAsString();
+      OS << ", value=";
+      if (auto const *StrLit = dyn_cast<StringLiteral>(E)) {
+        OS << "\"" << StrLit->getString() << "\"";
+      } else {
+        OS << "<todo>";
+        E->dump(OS, *Context);
+      }
+      OS << ">";
+      return;
+    }
     OS << "LValue <todo>";
     return;
   case APValue::Array: {
@@ -752,6 +778,44 @@ void TextNodeDumper::Visit(const APValue &Value, QualType Ty) {
   case APValue::Reflection:
     OS << "Reflection <todo>";
     return;
+  case APValue::TokenSequence: {
+    OS << "TokenSequence: ";
+    auto Tokens = Value.getTokenSequenceTokens();
+    auto Interpolators = Value.getTokenSequenceInterpolators();
+    const auto *interp_spot = Interpolators.begin();
+    for (const auto &Token : Tokens) {
+      if (Token.is(tok::annot_id_interpolator)) {
+        assert(interp_spot != Interpolators.end());
+        const APValue &interp = *interp_spot++;
+        auto num_args = (unsigned)interp.getInt().getLimitedValue(
+            std::numeric_limits<unsigned>::max());
+        OS << "\\id(";
+        // TODO(dhollman) fix (?) dumpAPValueChildren
+        // auto offset = (unsigned)(interp_spot - Interpolators.begin());
+        // dumpAPValueChildren(
+        //     interp, Ty,
+        //     [offset](const APValue &Value, unsigned Index) -> const APValue &
+        //     {
+        //       return Value.getTokenSequenceInterpolators()[Index + offset];
+        //     },
+        //     num_args, "arg", "args");
+        for (unsigned i = 0; i < num_args; ++i) {
+          if (i)
+            OS << ", ";
+          Visit(*interp_spot++, Ty);
+        }
+        OS << ") ";
+      } else if (Token.is(tok::annot_expr_interpolator)) {
+        assert(interp_spot != Interpolators.end());
+        OS << "\\(";
+        Visit(*interp_spot++, Ty);
+        OS << ") ";
+      } else {
+        OS << Token.getName() << ' ';
+      }
+    }
+    return;
+  }
   }
   llvm_unreachable("Unknown APValue kind!");
 }

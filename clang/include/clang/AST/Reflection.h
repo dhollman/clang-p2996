@@ -125,34 +125,6 @@ struct TagDataMemberSpec {
   bool operator!=(TagDataMemberSpec const& Rhs) const;
 };
 
-struct TokenInfoStorage {
-  enum class InfoKind {
-    Token,
-    // TODO(dhollman) add interpolator storage
-  };
-  // TODO(dhollman) add interpolator storage
-  llvm::AlignedCharArrayUnion<Token> Tok;
-  InfoKind Kind = InfoKind::Token;
-};
-
-class TokenSequenceStorage final
-    : private llvm::TrailingObjects<TokenSequenceStorage, TokenInfoStorage> {
-  friend TrailingObjects;
-  unsigned NumTokens;
-
-  unsigned numTrailingObjects(OverloadToken<TokenInfoStorage>) const {
-    return NumTokens;
-  }
-
-  explicit TokenSequenceStorage(ArrayRef<Token> Tokens);
-
-public:
-  static TokenSequenceStorage *Create(const ASTContext &Ctx,
-                                      ArrayRef<Token> Tokens);
-
-  ArrayRef<TokenInfoStorage> getTokens() const;
-};
-
 } // namespace clang
 
 #endif

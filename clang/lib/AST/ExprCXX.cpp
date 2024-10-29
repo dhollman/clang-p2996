@@ -13,6 +13,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "clang/AST/ExprCXX.h"
+#include "clang/AST/APValue.h"
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/Attr.h"
 #include "clang/AST/ComputeDependence.h"
@@ -2102,21 +2103,24 @@ CXXDependentMemberSpliceExpr::CXXDependentMemberSpliceExpr(EmptyShell Empty)
   : Expr(CXXDependentMemberSpliceExprClass, Empty) {
 }
 
-CXXDependentMemberSpliceExpr *CXXDependentMemberSpliceExpr::Create(
-        ASTContext &C, Expr *Base, SourceLocation OpLoc, bool IsArrow,
+CXXDependentMemberSpliceExpr *
+CXXDependentMemberSpliceExpr::Create(ASTContext &C, Expr *Base,
+                                     SourceLocation OpLoc, bool IsArrow,
         CXXSpliceExpr *RHS) {
-  return new (C) CXXDependentMemberSpliceExpr(C.DependentTy, Base, OpLoc,
-                                              IsArrow, RHS);
+  return new (C)
+      CXXDependentMemberSpliceExpr(C.DependentTy, Base, OpLoc, IsArrow, RHS);
 }
 
-CXXDependentMemberSpliceExpr *CXXDependentMemberSpliceExpr::CreateEmpty(
-        ASTContext &C) {
+CXXDependentMemberSpliceExpr *
+CXXDependentMemberSpliceExpr::CreateEmpty(ASTContext &C) {
   return new (C) CXXDependentMemberSpliceExpr(EmptyShell());
 }
 
-CXXExpansionInitListExpr::CXXExpansionInitListExpr(
-        QualType ResultTy, Expr ** SubExprs, unsigned NumSubExprs,
-        SourceLocation LBraceLoc, SourceLocation RBraceLoc)
+CXXExpansionInitListExpr::CXXExpansionInitListExpr(QualType ResultTy,
+                                                   Expr **SubExprs,
+                                                   unsigned NumSubExprs,
+                                                   SourceLocation LBraceLoc,
+                                                   SourceLocation RBraceLoc)
     : Expr(CXXExpansionInitListExprClass, ResultTy, VK_PRValue, OK_Ordinary),
       SubExprs(SubExprs), NumSubExprs(NumSubExprs), LBraceLoc(LBraceLoc),
       RBraceLoc(RBraceLoc), ContainsPack(false) {
@@ -2129,9 +2133,10 @@ CXXExpansionInitListExpr::CXXExpansionInitListExpr(
   setDependence(computeDependence(this));
 }
 
-CXXExpansionInitListExpr *CXXExpansionInitListExpr::Create(
-        const ASTContext &C, Expr ** SubExprs, unsigned NumSubExprs,
-        SourceLocation LBraceLoc, SourceLocation RBraceLoc) {
+CXXExpansionInitListExpr *
+CXXExpansionInitListExpr::Create(const ASTContext &C, Expr **SubExprs,
+                                 unsigned NumSubExprs, SourceLocation LBraceLoc,
+                                 SourceLocation RBraceLoc) {
   return new (C) CXXExpansionInitListExpr(C.VoidTy, SubExprs, NumSubExprs,
                                           LBraceLoc, RBraceLoc);
 }
@@ -2227,9 +2232,8 @@ CXXParenListInitExpr *CXXParenListInitExpr::CreateEmpty(ASTContext &C,
 
 CXXFoldExpr::CXXFoldExpr(QualType T, UnresolvedLookupExpr *Callee,
                                 SourceLocation LParenLoc, Expr *LHS,
-                                BinaryOperatorKind Opcode,
-                                SourceLocation EllipsisLoc, Expr *RHS,
-                                SourceLocation RParenLoc,
+                         BinaryOperatorKind Opcode, SourceLocation EllipsisLoc,
+                         Expr *RHS, SourceLocation RParenLoc,
                                 std::optional<unsigned> NumExpansions)
     : Expr(CXXFoldExprClass, T, VK_PRValue, OK_Ordinary), LParenLoc(LParenLoc),
       EllipsisLoc(EllipsisLoc), RParenLoc(RParenLoc),
@@ -2244,21 +2248,176 @@ CXXFoldExpr::CXXFoldExpr(QualType T, UnresolvedLookupExpr *Callee,
   setDependence(computeDependence(this));
 }
 
-CXXTokenSequenceExpr::CXXTokenSequenceExpr(const ASTContext &C, APValue Tokens)
+CXXTokenSequenceExpr::CXXTokenSequenceExpr(const ASTContext &C,
+                                           const APValue &Tokens)
     : Expr(CXXTokenSequenceExprClass, C.MetaInfoTy, VK_PRValue, OK_Ordinary),
-      Kind(OperandKind::Tokens) {
-        setAPValue(std::move(Tokens));
+      NumItems(0) {
+  new (getTrailingObjects<APValue>()) APValue(Tokens);
+}
+
+CXXTokenSequenceExpr::CXXTokenSequenceExpr(const ASTContext &C,
+                                           ArrayRef<TokenSequenceItem> Items)
+    : Expr(CXXTokenSequenceExprClass, C.MetaInfoTy, VK_PRValue, OK_Ordinary),
+      NumItems((unsigned)Items.size()) {
+  for (unsigned i = 0; i < NumItems; ++i) {
+    auto &item = *new (getTrailingObjects<TokenSequenceItem>() + i)
+                     TokenSequenceItem(Items[i]);
+    if (item.isDependent()) {
+      IsDependent = true;
+    }
+  }
       }
 
-CXXTokenSequenceExpr *CXXTokenSequenceExpr::Create(ASTContext &C,
-                                                   SourceLocation Op,
-                                                   SourceRange OperandRange,
-                                                   APValue Tokens) {
-  void *Mem =
-      C.Allocate(sizeof(CXXTokenSequenceExpr), alignof(CXXTokenSequenceExpr));
-  CXXTokenSequenceExpr &E =
-      *new (Mem) CXXTokenSequenceExpr(C, std::move(Tokens));
+      CXXTokenSequenceExpr *
+      CXXTokenSequenceExpr::Create(ASTContext &C, SourceLocation Op,
+                                   SourceRange OperandRange,
+                                   const APValue &Tokens) {
+        void *Mem =
+            C.Allocate(totalSizeToAlloc<APValue, TokenSequenceItem>(1, 0));
+  CXXTokenSequenceExpr &E = *new (Mem) CXXTokenSequenceExpr(C, Tokens);
+
   E.BeginLoc = Op;
   E.EndLoc = OperandRange.getEnd();
   return &E;
+      }
+
+CXXTokenSequenceExpr *
+CXXTokenSequenceExpr::Create(ASTContext &C, SourceLocation Op,
+                             SourceRange OperandRange,
+                             ArrayRef<TokenSequenceItem> Tokens) {
+  void *Mem = C.Allocate(
+      totalSizeToAlloc<APValue, TokenSequenceItem>(0, Tokens.size()));
+  CXXTokenSequenceExpr &E = *new (Mem) CXXTokenSequenceExpr(C, Tokens);
+
+  E.BeginLoc = Op;
+  E.EndLoc = OperandRange.getEnd();
+  return &E;
+}
+
+void TokenSequenceItem::EmplaceFromToken(TokenSequenceItem *Out,
+                                         Token const &Tok) {
+  TokenSequenceItem &TSI = *new (Out) TokenSequenceItem();
+  TSI.Kind = OperandKind::Token;
+  new ((Token *)(void *)&TSI.Operand) Token(Tok);
+}
+
+void TokenSequenceItem::EmplaceFromExprInterpolator(TokenSequenceItem *Out,
+                                                    Expr *E) {
+  TokenSequenceItem &TSI = *new (Out) TokenSequenceItem();
+  TSI.Kind = OperandKind::ExprInterpolator;
+  new ((Expr **)(void *)&TSI.Operand) Expr *(E);
+}
+
+void TokenSequenceItem::EmplaceFromIdInterpolator(TokenSequenceItem *Out,
+                                                  Expr *E, unsigned Idx) {
+  TokenSequenceItem &TSI = *new (Out) TokenSequenceItem();
+  TSI.Kind = OperandKind::IdInterpolator;
+  new ((Expr **)(void *)&TSI.Operand) Expr *(E);
+  TSI.IdArgIndex = Idx;
+}
+
+void TokenSequenceItem::EmplaceFromTokensInterpolator(TokenSequenceItem *Out,
+                                                      Expr *E) {
+  TokenSequenceItem &TSI = *new (Out) TokenSequenceItem();
+  TSI.Kind = OperandKind::TokensInterpolator;
+  new ((Expr **)(void *)&TSI.Operand) Expr *(E);
+}
+
+void TokenSequenceItem::EmplaceFromResolvedInterpolator(TokenSequenceItem *Out,
+                                                        APValue const &V) {
+  TokenSequenceItem &TSI = *new (Out) TokenSequenceItem();
+  TSI.Kind = OperandKind::ResolvedInterpolator;
+  new ((APValue *)(void *)&TSI.Operand) APValue(V);
+}
+
+TokenSequenceItem::~TokenSequenceItem() {
+  if (isToken()) {
+    getToken().~Token();
+  } else if (isResolvedInterpolator()) {
+    getAPValue().~APValue();
+  }
+}
+
+clang::TokenSequenceItem &
+clang::TokenSequenceItem::operator=(const TokenSequenceItem &Other) {
+  Kind = Other.Kind;
+  IdArgIndex = Other.IdArgIndex;
+  switch (Kind) {
+  case OperandKind::Token:
+    new ((Token *)(void *)&Operand) Token(Other.getToken());
+    break;
+  case OperandKind::ExprInterpolator:
+  case OperandKind::IdInterpolator:
+  case OperandKind::TokensInterpolator:
+    new ((Expr **)(void *)&Operand) Expr *(Other.getExpr());
+    break;
+  case OperandKind::ResolvedInterpolator:
+    new ((APValue *)(void *)&Operand) APValue(Other.getAPValue());
+    break;
+  default:
+    llvm_unreachable("Invalid operand kind");
+  }
+  return *this;
+}
+
+clang::TokenSequenceItem::TokenSequenceItem(const TokenSequenceItem &Other) {
+  Kind = Other.Kind;
+  IdArgIndex = Other.IdArgIndex;
+  switch (Kind) {
+  case OperandKind::Token:
+    new ((Token *)(void *)&Operand) Token(Other.getToken());
+    break;
+  case OperandKind::ExprInterpolator:
+  case OperandKind::IdInterpolator:
+  case OperandKind::TokensInterpolator:
+    new ((Expr **)(void *)&Operand) Expr *(Other.getExpr());
+    break;
+  case OperandKind::ResolvedInterpolator:
+    new ((APValue *)(void *)&Operand) APValue(Other.getAPValue());
+    break;
+  default:
+    llvm_unreachable("Invalid operand kind");
+  }
+}
+
+clang::TokenSequenceItem::TokenSequenceItem(TokenSequenceItem &&Other) {
+  Kind = Other.Kind;
+  IdArgIndex = Other.IdArgIndex;
+  switch (Kind) {
+  case OperandKind::Token:
+    new ((Token *)(void *)&Operand) Token(Other.getToken());
+    break;
+  case OperandKind::ExprInterpolator:
+  case OperandKind::IdInterpolator:
+  case OperandKind::TokensInterpolator:
+    new ((Expr **)(void *)&Operand) Expr *(Other.getExpr());
+    break;
+  case OperandKind::ResolvedInterpolator:
+    new ((APValue *)(void *)&Operand) APValue(Other.getAPValue());
+    break;
+  default:
+    llvm_unreachable("Invalid operand kind");
+  }
+}
+
+clang::TokenSequenceItem &
+clang::TokenSequenceItem::operator=(TokenSequenceItem &&Other) {
+  Kind = Other.Kind;
+  IdArgIndex = Other.IdArgIndex;
+  switch (Kind) {
+  case OperandKind::Token:
+    new ((Token *)(void *)&Operand) Token(Other.getToken());
+    break;
+  case OperandKind::ExprInterpolator:
+  case OperandKind::IdInterpolator:
+  case OperandKind::TokensInterpolator:
+    new ((Expr **)(void *)&Operand) Expr *(Other.getExpr());
+    break;
+  case OperandKind::ResolvedInterpolator:
+    new ((APValue *)(void *)&Operand) APValue(Other.getAPValue());
+    break;
+  default:
+    llvm_unreachable("Invalid operand kind");
+  }
+  return *this;
 }

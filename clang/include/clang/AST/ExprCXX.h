@@ -43,6 +43,7 @@
 #include "clang/Basic/SourceLocation.h"
 #include "clang/Basic/Specifiers.h"
 #include "clang/Basic/TypeTraits.h"
+#include "clang/Lex/Token.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/PointerUnion.h"
 #include "llvm/ADT/StringRef.h"
@@ -5580,21 +5581,136 @@ public:
   }
 };
 
-class CXXTokenSequenceExpr : public Expr {
-  // TODO(dhollman) we'll eventually need to make this have a trailingObjects.
-  // (See ConstantExpr for an example)
-  // TODO(dhollman) we'll eventually need to handle dependent expressions here
-  // just like in CXXReflectExpr because of interpolators
-  enum class OperandKind { Unset, Tokens, DependentExpr };
+// TODO destructor??
+class TokenSequenceItem {
+  enum class OperandKind {
+    Unset,
+    Token,
+    ExprInterpolator,
+    IdInterpolator,
+    TokensInterpolator,
+    ResolvedInterpolator,
+  };
+  OperandKind Kind = OperandKind::Unset;
+  unsigned IdArgIndex = 0;
+  llvm::AlignedCharArrayUnion<Token, APValue, Expr *> Operand;
 
-  // The operand of the expression.
-  OperandKind Kind;
-  llvm::AlignedCharArrayUnion<APValue, Expr *> Operand;
+  TokenSequenceItem() = default;
+
+public:
+  TokenSequenceItem(const TokenSequenceItem &);
+  TokenSequenceItem &operator=(const TokenSequenceItem &);
+  TokenSequenceItem(TokenSequenceItem &&);
+  TokenSequenceItem &operator=(TokenSequenceItem &&);
+
+  static void EmplaceFromToken(TokenSequenceItem *Out, Token const &Tok);
+
+  static void EmplaceFromExprInterpolator(TokenSequenceItem *Out, Expr *E);
+
+  static void EmplaceFromIdInterpolator(TokenSequenceItem *Out, Expr *Exprs,
+                                        unsigned Idx);
+
+  static void EmplaceFromTokensInterpolator(TokenSequenceItem *Out, Expr *E);
+
+  static void EmplaceFromResolvedInterpolator(TokenSequenceItem *Out,
+                                              APValue const &V);
+
+  static TokenSequenceItem FromToken(Token const &Tok) {
+    TokenSequenceItem Item;
+    EmplaceFromToken(&Item, Tok);
+    return Item;
+  }
+
+  static TokenSequenceItem FromExprInterpolator(Expr *E) {
+    TokenSequenceItem Item;
+    EmplaceFromExprInterpolator(&Item, E);
+    return Item;
+  }
+
+  static TokenSequenceItem FromIdInterpolator(Expr *E, unsigned Idx) {
+    TokenSequenceItem Item;
+    EmplaceFromIdInterpolator(&Item, E, Idx);
+    return Item;
+  }
+
+  static TokenSequenceItem FromTokensInterpolator(Expr *E) {
+    TokenSequenceItem Item;
+    EmplaceFromTokensInterpolator(&Item, E);
+    return Item;
+  }
+
+  static TokenSequenceItem FromResolvedInterpolator(APValue const &V) {
+    TokenSequenceItem Item;
+    EmplaceFromResolvedInterpolator(&Item, V);
+    return Item;
+  }
+
+  bool isToken() const { return Kind == OperandKind::Token; }
+  bool isExprInterpolater() const {
+    return Kind == OperandKind::ExprInterpolator;
+  }
+  bool isIdInterpolater() const { return Kind == OperandKind::IdInterpolator; }
+  bool isTokensInterpolator() const {
+    return Kind == OperandKind::TokensInterpolator;
+  }
+  bool isDependent() const {
+    if (isExprInterpolater() || isIdInterpolater() || isTokensInterpolator()) {
+      return getExpr()->getDependence() != ExprDependence::None;
+    }
+    return false;
+  }
+  bool isResolvedInterpolator() const {
+    return Kind == OperandKind::ResolvedInterpolator;
+  }
+
+  APValue const &getAPValue() const {
+    assert(isResolvedInterpolator() &&
+           "Invalid operand kind for getAPValue; must already be resolved");
+    return *(APValue const *)(const char *)&Operand;
+  }
+
+  Token const &getToken() const {
+    assert(isToken() && "Invalid operand kind for getToken");
+    return *(Token const *)(const char *)&Operand;
+  }
+
+  Expr *getExpr() const {
+    assert(isExprInterpolater() || isIdInterpolater() ||
+           isTokensInterpolator() && "Invalid operand kind for getExpr");
+    return *(Expr *const *)(const char *)&Operand;
+  }
+
+  unsigned getIdArgIndex() const {
+    assert(isIdInterpolater() && "Invalid operand kind for getIdArgIndex");
+    return IdArgIndex;
+  }
+
+  ~TokenSequenceItem();
+};
+
+class CXXTokenSequenceExpr final
+    : public Expr,
+      public llvm::TrailingObjects<CXXTokenSequenceExpr, APValue,
+                                   TokenSequenceItem> {
+  friend TrailingObjects;
+  // The number of tokens and/or expressions in the sequence. If this is 0, the
+  // sequence isn't dependent anymore and the tokens are stored in the APValue.
+  unsigned NumItems;
+  bool IsDependent = false;
 
   SourceLocation BeginLoc;
   SourceLocation EndLoc;
 
-  CXXTokenSequenceExpr(const ASTContext &C, APValue Tokens);
+  unsigned numTrailingObjects(OverloadToken<APValue>) const {
+    return NumItems == 0 ? 1 : 0;
+  }
+
+  unsigned numTrailingObjects(OverloadToken<TokenSequenceItem>) const {
+    return NumItems;
+  }
+
+  CXXTokenSequenceExpr(const ASTContext &C, const APValue &Tokens);
+  CXXTokenSequenceExpr(const ASTContext &C, ArrayRef<TokenSequenceItem> Tokens);
 
   // TODO(dhollman) finish this
   // CXXTokenSequenceExpr(EmptyShell Empty);
@@ -5602,7 +5718,11 @@ public:
   // Op is the location of the ^^
   // OpRange is from { to }
   static CXXTokenSequenceExpr *Create(ASTContext &C, SourceLocation Op,
-                                      SourceRange OperandRange, APValue Tokens);
+                                      SourceRange OperandRange,
+                                      APValue const &Tokens);
+  static CXXTokenSequenceExpr *Create(ASTContext &C, SourceLocation Op,
+                                      SourceRange OperandRange,
+                                      ArrayRef<TokenSequenceItem> Tokens);
 
   SourceLocation getBeginLoc() const { return BeginLoc; }
 
@@ -5612,15 +5732,18 @@ public:
     return SourceRange(getBeginLoc(), getEndLoc());
   }
 
-  APValue getAPValue() const {
-    assert(Kind == OperandKind::Tokens);
-    return *(const APValue *)(const char *)&Operand;
+  APValue const &getAPValue() const {
+    assert(NumItems == 0 && "APValue not available for dependent or "
+                            "identifier-containing TokenSequenceExpr. Use "
+                            "getItems until the expression isn't dependent or "
+                            "the identifier can be resolved");
+    return *getTrailingObjects<APValue>();
   }
 
-  void setAPValue(APValue RV) {
-    assert(Kind == OperandKind::Unset || Kind == OperandKind::Tokens);
-    Kind = OperandKind::Tokens;
-    new ((void *)&Operand) APValue(RV);
+  ArrayRef<TokenSequenceItem> getItems() const {
+    assert(NumItems > 0 && "TokenSequenceItems not available for independent, "
+                           "identifier-free TokenSequenceExpr. Use getAPValue");
+    return {getTrailingObjects<TokenSequenceItem>(), NumItems};
   }
 
   void setBeginLoc(SourceLocation Loc) { BeginLoc = Loc; }

@@ -33,6 +33,7 @@
 #include "clang/Sema/Ownership.h"
 #include "clang/Sema/ParsedTemplate.h"
 #include "clang/Sema/Sema.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/ErrorHandling.h"
 
 #include <cassert>
@@ -391,50 +392,36 @@ ExprResult Parser::ParseCXXTokenSequenceExpression(SourceLocation OpLoc) {
   // More complicated example:
   // x = ^^{ 5 };
   // ^^{ += \tokens(x) }
-  CachedTokens Toks;
+  SmallVector<TokenSequenceItem, 32> Items;
   while (BraceCount - Tok.is(tok::r_brace) > StartingBraceDepth) {
     if (Tok.is(tok::backslash)) {
       // TODO(dhollman) store the source location of the backslash somewhere
       ConsumeToken();
+      // ----------------------------------------
       // Handle \tokens
       if (Tok.is(tok::kw_tokens)) {
+        ConsumeToken(); // Consume the 'tokens' token
+        // TODO(dhollman) Maybe be a little more DRY?
         BalancedDelimiterTracker Interp(*this, tok::l_paren);
         if (Interp.expectAndConsume())
           return ExprError();
         ExprResult ER = ParseConstantExpression();
+
+        if (Interp.consumeClose())
+          return ExprError();
+
         if (ER.isInvalid()) {
           Tokens.skipToEnd();
           return ExprError();
-        } else {
-          // TODO(dhollman) Handle dependent expressions
-          if (auto *TSE = dyn_cast<CXXTokenSequenceExpr>(ER.get())) {
-            // TODO copy the tokens into the Toks from the trailing objects
-            // Toks.append(ER.get()->getCXXTokenSequenceExpr()->tokens());
-            // Does this work?
-            // CXXTokenSequenceExpr *CXXTokSeq =
-            // ER.get()->getCXXTokenSequenceExpr();
-            const TokenSequenceStorage *TSS =
-                TSE->getAPValue().getTokenSequence();
-            for (auto &T : TSS->getTokens()) {
-              if (T.Kind == TokenInfoStorage::InfoKind::Token)
-                Toks.push_back(*(const Token *)(const char *)(&T.Tok));
-              else {
-                // TODO handle interpolators
-                assert(false && "Interpolators not yet supported");
-              }
-            }
-          } else {
-            // TODO(dhollman) Diagnostic
-            // Diag(ER.get()->getExprLoc(), diag::err_expected_token_sequence);
-            Interp.skipToEnd();
-            Tokens.skipToEnd();
-            return ExprError();
-          }
-          Interp.consumeClose();
         }
-      } else if (Tok.is(tok::kw_id)) {
-        // TODO(dhollman) Handle \id
-        // Balance any number of arguments in parens.
+
+        Items.push_back(TokenSequenceItem::FromTokensInterpolator(ER.get()));
+
+      }
+      // ----------------------------------------
+      // Handle \id
+      else if (Tok.is(tok::kw_id)) {
+        ConsumeToken(); // Consume the 'id' token
         BalancedDelimiterTracker Parens(*this, tok::l_paren);
         if (Parens.expectAndConsume())
           return ExprError();
@@ -452,16 +439,29 @@ ExprResult Parser::ParseCXXTokenSequenceExpression(SourceLocation OpLoc) {
         if (Parens.consumeClose())
           return ExprError();
 
-        assert(false && "\\id interpolator not yet supported");
-      } else {
-        // TODO(dhollman) Handle \(...) interpolators
-        // Strategy plan (siraide) just throw the APValue into an annotation
-        // token, put that in the token sequence, and when you parse it, turn it
-        // back into a ConstantExpr or something like that
-        assert(false && "\\(...) interpolators not yet supported");
+        unsigned iArg = 0;
+        for (auto *E : Args) {
+          Items.push_back(TokenSequenceItem::FromIdInterpolator(E, iArg++));
+        }
       }
+      // ----------------------------------------
+      // Handle \(...) interpolators
+      else {
+        BalancedDelimiterTracker Parens(*this, tok::l_paren);
+        if (Parens.expectAndConsume())
+          return ExprError();
+
+        ExprResult ER = ParseConstantExpression();
+
+        if (Parens.consumeClose())
+          return ExprError();
+
+        Items.push_back(TokenSequenceItem::FromExprInterpolator(ER.get()));
+      }
+      // ----------------------------------------
     } else {
-      Toks.push_back(Tok);
+      // Just a regular token
+      Items.push_back(TokenSequenceItem::FromToken(Tok));
       ConsumeAnyToken();
     }
   }
@@ -471,6 +471,5 @@ ExprResult Parser::ParseCXXTokenSequenceExpression(SourceLocation OpLoc) {
 
   SourceLocation LBraceLoc = Tokens.getOpenLocation();
   SourceLocation RBraceLoc = Tokens.getCloseLocation();
-  return Actions.ActOnCXXTokenSequenceExpr(OpLoc, LBraceLoc, std::move(Toks),
-                                           RBraceLoc);
+  return Actions.ActOnCXXTokenSequenceExpr(OpLoc, LBraceLoc, Items, RBraceLoc);
 }

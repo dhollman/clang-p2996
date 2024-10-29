@@ -15209,7 +15209,7 @@ public:
       SourceLocation ColonColonLoc);
   ExprResult ActOnCXXTokenSequenceExpr(SourceLocation KWLoc,
                                        SourceLocation LParenLoc,
-                                       CachedTokens Tokens,
+                                       ArrayRef<TokenSequenceItem> Tokens,
                                        SourceLocation RParenLoc);
 
   ExprResult ActOnMemberAccessExpr(Scope *S, Expr *Base,
@@ -15217,6 +15217,11 @@ public:
                                    tok::TokenKind OpKind,
                                    CXXSpliceExpr *RHS,
                                    SourceLocation TemplateKWLoc);
+
+  ExprResult ActOnCXXTokenSequenceExpr(SourceLocation KWLoc,
+                                       SourceLocation LParenLoc,
+                                       CachedTokens Tokens,
+                                       SourceLocation RParenLoc);
 
   // Reflection of non-expression operands.
   ExprResult BuildCXXReflectExpr(SourceLocation OperatorLoc,
@@ -15235,6 +15240,11 @@ public:
                                  SubstNonTypeTemplateParmExpr *E);
   ExprResult BuildCXXReflectExpr(SourceLocation OperatorLoc,
                                  CXXSpliceExpr *E);
+
+  ExprResult BuildCXXTokenSequenceExpr(SourceLocation KWLoc,
+                                       SourceLocation LParenLoc,
+                                       ArrayRef<TokenSequenceItem> Tokens,
+                                       SourceLocation RParenLoc);
 
   ExprResult BuildCXXMetafunctionExpr(SourceLocation KwLoc,
                                       SourceLocation LParenLoc,

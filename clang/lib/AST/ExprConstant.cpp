@@ -47,6 +47,7 @@
 #include "clang/AST/CharUnits.h"
 #include "clang/AST/CurrentSourceLocExprScope.h"
 #include "clang/AST/Expr.h"
+#include "clang/AST/ExprCXX.h"
 #include "clang/AST/OSLog.h"
 #include "clang/AST/OptionalDiagnostic.h"
 #include "clang/AST/RecordLayout.h"
@@ -16152,11 +16153,18 @@ public:
   bool VisitCXXMetafunctionExpr(const CXXMetafunctionExpr *E);
   bool VisitCXXSpliceSpecifierExpr(const CXXSpliceSpecifierExpr *E);
   bool VisitCXXSpliceExpr(const CXXSpliceExpr *E);
+  bool VisitCXXTokenSequenceExpr(const CXXTokenSequenceExpr *E);
 };
 
 bool ReflectionEvaluator::VisitCXXReflectExpr(const CXXReflectExpr *E) {
   APValue Result(E->getReflection());
   return Success(Result, E);
+}
+
+bool ReflectionEvaluator::VisitCXXTokenSequenceExpr(
+    const CXXTokenSequenceExpr *E) {
+  APValue TokResult(E->getAPValue());
+  return Success(TokResult, E);
 }
 
 bool ReflectionEvaluator::VisitCXXMetafunctionExpr(
@@ -16972,6 +16980,7 @@ static ICEDiag CheckICE(const Expr* E, const ASTContext &Ctx) {
   case Expr::ExpressionTraitExprClass:
   case Expr::CXXNoexceptExprClass:
   case Expr::CXXReflectExprClass:
+  case Expr::CXXTokenSequenceExprClass:
   case Expr::CXXMetafunctionExprClass:
   case Expr::CXXSpliceSpecifierExprClass:
   case Expr::CXXSpliceExprClass:

@@ -894,6 +894,10 @@ ANNOTATION(pack_indexing_type) // annotation for an indexed pack of type,
 ANNOTATION(splice)       // annotation for a splice of a reflection whose kind
                          // is yet to be determined (e.g., expression, type,
                          // namespace, template).
+ANNOTATION(id_interpolator) // annotation for an id interpolator in a token
+                            // sequence expression.
+ANNOTATION(expr_interpolator) // annotation for an expression interpolator in a
+                              // token sequence expression.
 
 // Annotation for #pragma unused(...)
 // For each argument inside the parentheses the pragma handler will produce

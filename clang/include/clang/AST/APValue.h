@@ -17,9 +17,11 @@
 
 #include "clang/AST/Reflection.h"
 #include "clang/Basic/LLVM.h"
+#include "clang/Lex/Token.h"
 #include "llvm/ADT/APFixedPoint.h"
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/APSInt.h"
+#include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/FoldingSet.h"
 #include "llvm/ADT/PointerIntPair.h"
 #include "llvm/ADT/PointerUnion.h"
@@ -315,13 +317,39 @@ private:
     ReflectionKind Kind;
     const void *Data;
   };
+  struct TokenSequenceData {
+    Token *Tokens;
+    unsigned NumTokens;
+    // For each of the tokens (in Tokens) that is an annot_id_interpolator, this
+    // array contains an APValue representing the number of arguments
+    // and one for each of the arguments themselves. For each token
+    // that is an annot_expr_interpolator, this array contains the APValue
+    // of the evaluated expression. For non-interpolators, this array doesn't
+    // have an entry.
+    APValue *EvaluatedInterpolators;
+    unsigned NumEvaluatedInterpolators;
+    TokenSequenceData(ArrayRef<Token> Tokens, ArrayRef<APValue> Interpolators)
+        : Tokens(new Token[Tokens.size()]), NumTokens((unsigned)Tokens.size()),
+          EvaluatedInterpolators(new APValue[Interpolators.size()]),
+          NumEvaluatedInterpolators((unsigned)Interpolators.size()) {
+      std::copy(Tokens.begin(), Tokens.end(), this->Tokens);
+      std::copy(Interpolators.begin(), Interpolators.end(),
+                EvaluatedInterpolators);
+    }
+    TokenSequenceData(const TokenSequenceData &) = delete;
+    TokenSequenceData &operator=(const TokenSequenceData &) = delete;
+    ~TokenSequenceData() {
+      delete[] Tokens;
+      delete[] EvaluatedInterpolators;
+    }
+  };
   struct MemberPointerData;
 
   // We ensure elsewhere that Data is big enough for LV and MemberPointerData.
   typedef llvm::AlignedCharArrayUnion<void *, APSInt, APFloat, ComplexAPSInt,
                                       ComplexAPFloat, Vec, Arr, StructData,
                                       UnionData, AddrLabelDiffData,
-                                      ReflectionData, TokenSequenceStorage *>
+                                      ReflectionData, TokenSequenceData>
       DataType;
   static const size_t DataSize = sizeof(DataType);
 
@@ -397,10 +425,9 @@ public:
       : Kind(None), UnderlyingTy(), ReflectionDepth() {
     MakeReflection(); setReflection(RK, Data);
   }
-  explicit APValue(TokenSequenceStorage *Tokens)
+  explicit APValue(ArrayRef<Token> T, ArrayRef<APValue> Interpolators)
       : Kind(None), UnderlyingTy(), ReflectionDepth() {
-    MakeTokenSequence();
-    setTokenSequence(Tokens);
+    MakeTokenSequence(T, Interpolators);
   }
   static APValue IndeterminateValue() {
     APValue Result;
@@ -672,9 +699,17 @@ public:
     assert(Kind == AddrLabelDiff && "Invalid accessor");
     return ((const AddrLabelDiffData *)(const char *)&Data)->RHSExpr;
   }
-  const TokenSequenceStorage *getTokenSequence() const {
+  const ArrayRef<Token> getTokenSequenceTokens() const {
     assert(Kind == TokenSequence && "Invalid accessor");
-    return *(TokenSequenceStorage *const *)&Data;
+    return {((const TokenSequenceData *)(const char *)&Data)->Tokens,
+            ((const TokenSequenceData *)(const char *)&Data)->NumTokens};
+  }
+  const ArrayRef<APValue> getTokenSequenceInterpolators() const {
+    assert(Kind == TokenSequence && "Invalid accessor");
+    return {((const TokenSequenceData *)(const char *)&Data)
+                ->EvaluatedInterpolators,
+            ((const TokenSequenceData *)(const char *)&Data)
+                ->NumEvaluatedInterpolators};
   }
 
   unsigned getReflectionDepth() const { return ReflectionDepth; }
@@ -736,7 +771,8 @@ public:
     ((AddrLabelDiffData *)(char *)&Data)->RHSExpr = RHSExpr;
   }
   void setReflection(ReflectionKind RK, const void *Data);
-  void setTokenSequence(TokenSequenceStorage *Tokens);
+  void setTokenSequence(ArrayRef<Token> Tokens,
+                        ArrayRef<APValue> EvaluatedInterpolators);
 
 private:
   void DestroyDataAndMakeUninit();
@@ -796,7 +832,7 @@ private:
     Kind = Reflection;
   }
 
-  void MakeTokenSequence();
+  void MakeTokenSequence(ArrayRef<Token>, ArrayRef<APValue>);
 
 private:
   /// The following functions are used as part of initialization, during
