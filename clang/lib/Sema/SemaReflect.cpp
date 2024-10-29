@@ -993,6 +993,7 @@ ExprResult Sema::BuildCXXTokenSequenceExpr(SourceLocation KWLoc,
   SmallVector<Token, 32> Toks;
   SmallVector<APValue, 4> Interps;
   SmallVector<TokenSequenceItem> DepExprs;
+  SmallVector<Expr *> Children;
   bool IsDependent = false;
 
   // ----------------------------------------
@@ -1019,6 +1020,7 @@ ExprResult Sema::BuildCXXTokenSequenceExpr(SourceLocation KWLoc,
 
   // ----------------------------------------
 
+  // TODO: Move this to ExprConstant.cpp?!?
   // Transform anything that's no longer dependent into a representation of the
   // value, and store the final result in the CXXTokenSequenceExpr if there are
   // no more dependent subexpressions.
@@ -1040,6 +1042,7 @@ ExprResult Sema::BuildCXXTokenSequenceExpr(SourceLocation KWLoc,
         }
 
         Expr *InterpOperand = Result.get();
+        Children.push_back(InterpOperand);
 
         if (InterpOperand->getType() != Context.MetaInfoTy) {
           Result =
@@ -1117,7 +1120,8 @@ ExprResult Sema::BuildCXXTokenSequenceExpr(SourceLocation KWLoc,
         // be string-like
         // TODO(dhollman) Implicit conversions
 
-        SmallVector<APValue, 4> Args;
+        SmallVector<Expr *, 4> ArgExprs;
+        bool HasDependentInterpArg = false;
 
         do {
           // Intentionally shadow to avoid accidentally using the outer `Item`
@@ -1130,14 +1134,14 @@ ExprResult Sema::BuildCXXTokenSequenceExpr(SourceLocation KWLoc,
             return ExprError();
           }
           Expr *ArgOperand = Result.get();
+          Children.push_back(ArgOperand);
 
-          Expr::EvalResult ArgER;
-          if (!ArgOperand->EvaluateAsConstantExpr(ArgER, Context)) {
-            // TODO diagnostic
-            return ExprError();
+          if (ArgOperand->getDependence() != ExprDependence::None) {
+            HasDependentInterpArg = true;
+            IsDependent = true;
           }
 
-          Args.push_back(ArgER.Val);
+          ArgExprs.push_back(ArgOperand);
 
           ++spot;
         } while (spot != Items.end() && spot->isIdInterpolater() &&
@@ -1148,30 +1152,55 @@ ExprResult Sema::BuildCXXTokenSequenceExpr(SourceLocation KWLoc,
         if (spot != Items.end())
           --spot;
 
-        // Put the size in front
-        llvm::APSInt ArgCountAPS(sizeof(unsigned) * 8, true);
-        ArgCountAPS = prev_index + 1;
-        APValue Count(ArgCountAPS);
-        Args.insert(Args.begin(), Count);
+        // If none of the arguments are dependent, we can go ahead and evaluate
+        // the interpolator now.
+        // TODO(dhollman) figure out if the arguments need to be evaluated as
+        // soon as they're individually no longer dependent, or if we can wait
+        // until all are no longer dependent
+        if (!HasDependentInterpArg) {
+          SmallVector<APValue, 4> Args;
+          // Put the size in front
+          {
+            llvm::APSInt ArgCountAPS(sizeof(unsigned) * 8, true);
+            ArgCountAPS = prev_index + 1;
+            APValue Count(ArgCountAPS);
+            Args.push_back(Count);
+          }
 
-        SmallVector<APValue, 2> InterpsForCurrent;
-        if (!IsDependent)
-          Toks.push_back(placeholder);
-        bool first = true;
-        for (auto &Arg : Args) {
-          if (!first) {
-            InterpsForCurrent.push_back(Arg);
-          } else
-            first = false;
+          for (auto &Arg : ArgExprs) {
+            Expr::EvalResult ArgER;
+            if (!Arg->EvaluateAsConstantExpr(ArgER, Context)) {
+              // TODO diagnostic
+              return ExprError();
+            }
+            Args.push_back(ArgER.Val);
+          }
+
+          SmallVector<APValue, 2> InterpsForCurrent;
           if (!IsDependent)
-            Interps.push_back(Arg);
+            Toks.push_back(placeholder);
+          bool first = true;
+          for (auto &Arg : Args) {
+            if (!first) {
+              InterpsForCurrent.push_back(Arg);
+            } else
+              first = false;
+            if (!IsDependent)
+              Interps.push_back(Arg);
+          }
+          DepExprs.push_back(TokenSequenceItem::FromResolvedInterpolator(
+              APValue({&placeholder, 1}, InterpsForCurrent)));
+        } else {
+          unsigned iArg = 0;
+          for (auto &ArgExpr : ArgExprs) {
+            DepExprs.push_back(
+                TokenSequenceItem::FromIdInterpolator(ArgExpr, iArg++));
+          }
         }
-        DepExprs.push_back(TokenSequenceItem::FromResolvedInterpolator(
-            APValue({&placeholder, 1}, InterpsForCurrent)));
       }
       // ----------------------------------------
       // Handle the \(...) interpolator.
-      else {
+      else if (Item.isExprInterpolater()) {
         Token placeholder = PlaceholderTokenFor(Item);
 
         ExprResult Result = DefaultLvalueConversion(Item.getExpr());
@@ -1179,6 +1208,7 @@ ExprResult Sema::BuildCXXTokenSequenceExpr(SourceLocation KWLoc,
           return ExprError();
         }
         Expr *ArgOperand = Result.get();
+        Children.push_back(ArgOperand);
 
         Expr::EvalResult ArgER;
         if (!ArgOperand->EvaluateAsConstantExpr(ArgER, Context)) {
@@ -1193,21 +1223,34 @@ ExprResult Sema::BuildCXXTokenSequenceExpr(SourceLocation KWLoc,
 
         DepExprs.push_back(TokenSequenceItem::FromResolvedInterpolator(
             APValue({&placeholder, 1}, {&ArgER.Val, 1})));
+      } else {
+        assert(Item.isResolvedInterpolator());
+        DepExprs.push_back(Item);
+        if (!IsDependent) {
+          Toks.push_back(Item.getAPValue().getTokenSequenceTokens()[0]);
+          for (auto const &interp :
+               Item.getAPValue().getTokenSequenceInterpolators()) {
+            Interps.push_back(interp);
+          }
+        }
       }
       // ----------------------------------------
     } else {
       IsDependent = true;
+      Children.push_back(Item.getExpr());
       DepExprs.push_back(Item);
     }
   }
 
   if (IsDependent) {
     return CXXTokenSequenceExpr::Create(Context, KWLoc, {LParenLoc, RParenLoc},
-                                        DepExprs);
+                                        DepExprs, Children);
   } else {
     // Create the APValue for the evaluated CXXTokenSequenceExpr
+    // We still pass the Children to the constructor so that we can form
+    // children() correctly
     return CXXTokenSequenceExpr::Create(Context, KWLoc, {LParenLoc, RParenLoc},
-                                        APValue(Toks, Interps));
+                                        APValue(Toks, Interps), Children);
   }
 }
 

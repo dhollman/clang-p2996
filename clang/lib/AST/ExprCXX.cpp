@@ -2249,45 +2249,58 @@ CXXFoldExpr::CXXFoldExpr(QualType T, UnresolvedLookupExpr *Callee,
 }
 
 CXXTokenSequenceExpr::CXXTokenSequenceExpr(const ASTContext &C,
-                                           const APValue &Tokens)
+                                           const APValue &Tokens, Expr **Chlds,
+                                           unsigned NumChlds)
     : Expr(CXXTokenSequenceExprClass, C.MetaInfoTy, VK_PRValue, OK_Ordinary),
-      NumItems(0) {
+      NumItems(0), Children(Chlds), NumChildren(NumChlds) {
   new (getTrailingObjects<APValue>()) APValue(Tokens);
 }
 
 CXXTokenSequenceExpr::CXXTokenSequenceExpr(const ASTContext &C,
-                                           ArrayRef<TokenSequenceItem> Items)
+                                           ArrayRef<TokenSequenceItem> Items,
+                                           Expr **Chld, unsigned NumChlds)
     : Expr(CXXTokenSequenceExprClass, C.MetaInfoTy, VK_PRValue, OK_Ordinary),
-      NumItems((unsigned)Items.size()) {
+      NumItems((unsigned)Items.size()), Children(Chld), NumChildren(NumChlds) {
+  ExprDependence Dep = ExprDependence::None;
   for (unsigned i = 0; i < NumItems; ++i) {
     auto &item = *new (getTrailingObjects<TokenSequenceItem>() + i)
                      TokenSequenceItem(Items[i]);
     if (item.isDependent()) {
       IsDependent = true;
+      // TODO move this to TokenSequenceItem?
+      Dep |= item.getExpr()->getDependence();
     }
   }
-      }
+  setDependence(Dep);
+}
 
-      CXXTokenSequenceExpr *
-      CXXTokenSequenceExpr::Create(ASTContext &C, SourceLocation Op,
-                                   SourceRange OperandRange,
-                                   const APValue &Tokens) {
-        void *Mem =
-            C.Allocate(totalSizeToAlloc<APValue, TokenSequenceItem>(1, 0));
-  CXXTokenSequenceExpr &E = *new (Mem) CXXTokenSequenceExpr(C, Tokens);
+CXXTokenSequenceExpr *CXXTokenSequenceExpr::Create(ASTContext &C,
+                                                   SourceLocation Op,
+                                                   SourceRange OperandRange,
+                                                   const APValue &Tokens,
+                                                   ArrayRef<Expr *> Children) {
+  void *Mem = C.Allocate(totalSizeToAlloc<APValue, TokenSequenceItem>(1, 0));
+
+  Expr **ChildArray = new (C) Expr *[Children.size()];
+  std::copy(Children.begin(), Children.end(), ChildArray);
+
+  CXXTokenSequenceExpr &E = *new (Mem) CXXTokenSequenceExpr(
+      C, Tokens, ChildArray, (unsigned)Children.size());
 
   E.BeginLoc = Op;
   E.EndLoc = OperandRange.getEnd();
   return &E;
-      }
+}
 
-CXXTokenSequenceExpr *
-CXXTokenSequenceExpr::Create(ASTContext &C, SourceLocation Op,
-                             SourceRange OperandRange,
-                             ArrayRef<TokenSequenceItem> Tokens) {
+CXXTokenSequenceExpr *CXXTokenSequenceExpr::Create(
+    ASTContext &C, SourceLocation Op, SourceRange OperandRange,
+    ArrayRef<TokenSequenceItem> Tokens, ArrayRef<Expr *> Children) {
   void *Mem = C.Allocate(
       totalSizeToAlloc<APValue, TokenSequenceItem>(0, Tokens.size()));
-  CXXTokenSequenceExpr &E = *new (Mem) CXXTokenSequenceExpr(C, Tokens);
+  Expr **ChildArray = new (C) Expr *[Children.size()];
+  std::copy(Children.begin(), Children.end(), ChildArray);
+  CXXTokenSequenceExpr &E = *new (Mem) CXXTokenSequenceExpr(
+      C, Tokens, ChildArray, (unsigned)Children.size());
 
   E.BeginLoc = Op;
   E.EndLoc = OperandRange.getEnd();
@@ -2420,4 +2433,16 @@ clang::TokenSequenceItem::operator=(TokenSequenceItem &&Other) {
     llvm_unreachable("Invalid operand kind");
   }
   return *this;
+}
+
+TokenSequenceItem
+TokenSequenceItem::FromItemAndNewExpr(TokenSequenceItem const &Item, Expr *E) {
+  assert(Item.isExprInterpolater() || Item.isIdInterpolater() ||
+         Item.isTokensInterpolator() &&
+             "Bad reconstruction of TokenSequenceItem");
+  TokenSequenceItem TSI;
+  TSI.IdArgIndex = Item.IdArgIndex;
+  TSI.Kind = Item.Kind;
+  new ((Expr **)(void *)&TSI.Operand) Expr *(E);
+  return TSI;
 }

@@ -20,6 +20,7 @@
 #include "clang/AST/DeclBase.h"
 #include "clang/AST/DeclTemplate.h"
 #include "clang/AST/Expr.h"
+#include "clang/AST/ExprCXX.h"
 #include "clang/AST/ExprConcepts.h"
 #include "clang/AST/PrettyDeclStackTrace.h"
 #include "clang/AST/RecursiveASTVisitor.h"
@@ -1565,10 +1566,7 @@ namespace {
     ExprResult TransformPredefinedExpr(PredefinedExpr *E);
     ExprResult TransformDeclRefExpr(DeclRefExpr *E);
     ExprResult TransformCXXReflectExpr(CXXReflectExpr *E);
-    ExprResult TransformCXXTokenSequenceExpr(CXXTokenSequenceExpr *E) {
-      // TODO(dhollman) Implement this
-      return ExprError();
-    };
+    ExprResult TransformCXXTokenSequenceExpr(CXXTokenSequenceExpr *E);
     ExprResult TransformCXXDefaultArgExpr(CXXDefaultArgExpr *E);
 
     ExprResult TransformTemplateParmRefExpr(Expr *E,
@@ -2484,6 +2482,30 @@ TemplateInstantiator::TransformCXXReflectExpr(CXXReflectExpr *E) {
   }
 
   return inherited::TransformCXXReflectExpr(E);
+}
+
+ExprResult
+TemplateInstantiator::TransformCXXTokenSequenceExpr(CXXTokenSequenceExpr *E) {
+  if (E->isDependent()) {
+    SmallVector<TokenSequenceItem, 32> NewItems;
+    for (auto const &TSI : E->getItems()) {
+      if (TSI.isDependent()) {
+        ExprResult Result = TransformExpr(TSI.getExpr());
+        if (Result.isInvalid())
+          return ExprError();
+        NewItems.push_back(
+            TokenSequenceItem::FromItemAndNewExpr(TSI, Result.get()));
+      } else {
+        NewItems.push_back(TSI);
+      }
+    }
+
+    // TODO(dhollman) Properly propagate the location of the keyword, etc.
+    return getSema().BuildCXXTokenSequenceExpr(
+        E->getBeginLoc(), E->getBeginLoc(), NewItems, E->getEndLoc());
+  }
+
+  return inherited::TransformCXXTokenSequenceExpr(E);
 }
 
 ExprResult TemplateInstantiator::TransformCXXDefaultArgExpr(

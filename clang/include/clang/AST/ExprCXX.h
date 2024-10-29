@@ -5645,6 +5645,9 @@ public:
     return Item;
   }
 
+  static TokenSequenceItem FromItemAndNewExpr(TokenSequenceItem const &Item,
+                                              Expr *E);
+
   bool isToken() const { return Kind == OperandKind::Token; }
   bool isExprInterpolater() const {
     return Kind == OperandKind::ExprInterpolator;
@@ -5680,6 +5683,12 @@ public:
     return *(Expr *const *)(const char *)&Operand;
   }
 
+  void setExpr(Expr *E) {
+    assert(isExprInterpolater() || isIdInterpolater() ||
+           isTokensInterpolator() && "Invalid operand kind for setExpr");
+    new ((void *)(char *)&Operand) Expr *(E);
+  }
+
   unsigned getIdArgIndex() const {
     assert(isIdInterpolater() && "Invalid operand kind for getIdArgIndex");
     return IdArgIndex;
@@ -5698,6 +5707,9 @@ class CXXTokenSequenceExpr final
   unsigned NumItems;
   bool IsDependent = false;
 
+  Expr **Children;
+  unsigned NumChildren;
+
   SourceLocation BeginLoc;
   SourceLocation EndLoc;
 
@@ -5709,8 +5721,10 @@ class CXXTokenSequenceExpr final
     return NumItems;
   }
 
-  CXXTokenSequenceExpr(const ASTContext &C, const APValue &Tokens);
-  CXXTokenSequenceExpr(const ASTContext &C, ArrayRef<TokenSequenceItem> Tokens);
+  CXXTokenSequenceExpr(const ASTContext &C, const APValue &Tokens,
+                       Expr **Children, unsigned NumChildren);
+  CXXTokenSequenceExpr(const ASTContext &C, ArrayRef<TokenSequenceItem> Tokens,
+                       Expr **Children, unsigned NumChildren);
 
   // TODO(dhollman) finish this
   // CXXTokenSequenceExpr(EmptyShell Empty);
@@ -5719,10 +5733,12 @@ public:
   // OpRange is from { to }
   static CXXTokenSequenceExpr *Create(ASTContext &C, SourceLocation Op,
                                       SourceRange OperandRange,
-                                      APValue const &Tokens);
+                                      APValue const &Tokens,
+                                      ArrayRef<Expr *> Children);
   static CXXTokenSequenceExpr *Create(ASTContext &C, SourceLocation Op,
                                       SourceRange OperandRange,
-                                      ArrayRef<TokenSequenceItem> Tokens);
+                                      ArrayRef<TokenSequenceItem> Tokens,
+                                      ArrayRef<Expr *> Children);
 
   SourceLocation getBeginLoc() const { return BeginLoc; }
 
@@ -5746,15 +5762,25 @@ public:
     return {getTrailingObjects<TokenSequenceItem>(), NumItems};
   }
 
+  bool isDependent() const { return IsDependent; }
+
+  ArrayRef<TokenSequenceItem> getItems() {
+    assert(NumItems > 0 && "TokenSequenceItems not available for independent, "
+                           "identifier-free TokenSequenceExpr. Use getAPValue");
+    return {getTrailingObjects<TokenSequenceItem>(), NumItems};
+  }
+
   void setBeginLoc(SourceLocation Loc) { BeginLoc = Loc; }
   void setEndLoc(SourceLocation Loc) { EndLoc = Loc; }
 
   child_range children() {
-    return child_range(child_iterator(), child_iterator());
+    return child_range(reinterpret_cast<Stmt **>(&Children[0]),
+                       reinterpret_cast<Stmt **>(&Children[NumChildren]));
   }
 
   const_child_range children() const {
-    return const_child_range(const_child_iterator(), const_child_iterator());
+    return const_child_range(reinterpret_cast<Stmt **>(&Children[0]),
+                             reinterpret_cast<Stmt **>(&Children[NumChildren]));
   }
 
   static bool classof(const Stmt *T) {
