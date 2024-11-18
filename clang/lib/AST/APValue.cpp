@@ -1672,17 +1672,36 @@ void APValue::setReflection(ReflectionKind RK, const void *Ptr) {
   assert(RK == ReflectionKind::Null && "unknown reflection kind");
 }
 
-void APValue::MakeTokenSequence(ArrayRef<Token> Tokens,
-                                ArrayRef<APValue> ResolvedInterps) {
+void APValue::MakeTokenSequence(
+    ArrayRef<Token> Tokens,
+    ArrayRef<std::pair<Expr *, APValue>> ResolvedInterps) {
   assert(isAbsent() && "Bad state change");
   Kind = TokenSequence;
   setTokenSequence(Tokens, ResolvedInterps);
 }
 
-void APValue::setTokenSequence(ArrayRef<Token> Tokens,
-                               ArrayRef<APValue> ResolvedInterps) {
+void APValue::setTokenSequence(
+    ArrayRef<Token> Tokens,
+    ArrayRef<std::pair<Expr *, APValue>> ResolvedInterps) {
   assert((isAbsent() || isTokenSequence()) && "Bad state change");
   Kind = TokenSequence;
   new ((TokenSequenceData *)(char *)&Data)
       TokenSequenceData(Tokens, ResolvedInterps);
+
+  // Now that it's in place, go through and set the token annotations to point
+  // to the right data
+  // This is less readable than it could be because we can't get a non-const
+  // pointer via an array ref
+  auto *TokData = ((TokenSequenceData *)(char *)&Data);
+  auto *interps_loc = TokData->EvaluatedInterpolators;
+  unsigned i = 0;
+  for (auto *spot = TokData->Tokens; i < TokData->NumTokens; ++i, ++spot) {
+    auto &Tok = *spot;
+    if (Tok.isAnnotation()) {
+      assert(Tok.is(tok::annot_id_interpolator) ||
+             Tok.is(tok::annot_expr_interpolator) &&
+                 "unknown annotation token");
+      Tok.setAnnotationValue(&(*interps_loc++));
+    }
+  }
 }

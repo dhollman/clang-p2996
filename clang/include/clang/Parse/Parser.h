@@ -15,6 +15,7 @@
 #ifndef LLVM_CLANG_PARSE_PARSER_H
 #define LLVM_CLANG_PARSE_PARSER_H
 
+#include "clang/AST/ExprCXX.h"
 #include "clang/Basic/OpenACCKinds.h"
 #include "clang/Basic/OperatorPrecedence.h"
 #include "clang/Lex/CodeCompletionHandler.h"
@@ -3963,6 +3964,7 @@ private:
   ExprResult ParseCXXReflectExpression(SourceLocation OpLoc);
   ExprResult ParseCXXTokenSequenceExpression(SourceLocation OpLoc);
   ExprResult ParseCXXMetafunctionExpression();
+  ExprResult ParseCXXQueueInjectionExpr();
 
   bool ParseCXXSpliceSpecifier(SourceLocation TemplateKWLoc = {});
 
@@ -3979,6 +3981,10 @@ private:
   void ParseAnnotationSpecifier(ParsedAttributes &Attrs,
                                 SourceLocation *endLoc = nullptr);
 
+public:
+  bool InjectQueuedTokenSequence(const CXXQueueInjectionExpr *Expr);
+
+private:
   //===--------------------------------------------------------------------===//
   // Preprocessor code-completion pass-through
   void CodeCompleteDirective(bool InConditional) override;

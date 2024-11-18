@@ -186,7 +186,11 @@ def CXXSpliceSpecifierExpr : StmtNode<Expr>;
 def CXXSpliceExpr : StmtNode<Expr>;
 def StackLocationExpr : StmtNode<Expr>;
 def ExtractLValueExpr : StmtNode<Expr>;
+
+// C++2c Token sequence injection expressions (P3294)
 def CXXTokenSequenceExpr : StmtNode<Expr>;
+def ExprWithTrailingInjectedTokenSequence : StmtNode<Expr>;
+def CXXQueueInjectionExpr : StmtNode<Expr>;
 
 // C++2c Expansion statement support expressions
 def CXXExpansionInitListExpr : StmtNode<Expr>;

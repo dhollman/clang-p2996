@@ -2345,6 +2345,17 @@ void StmtProfiler::VisitCXXTokenSequenceExpr(const CXXTokenSequenceExpr *E) {
   // TODO(dhollman) implement this
 }
 
+void StmtProfiler::VisitCXXQueueInjectionExpr(const CXXQueueInjectionExpr *E) {
+  // TODO(dhollman) implement this
+  VisitStmt(E);
+}
+
+void StmtProfiler::VisitExprWithTrailingInjectedTokenSequence(
+    const ExprWithTrailingInjectedTokenSequence *E) {
+  // TODO(dhollman) implement this
+  VisitStmt(E);
+}
+
 void StmtProfiler::VisitCXXMetafunctionExpr(const CXXMetafunctionExpr *E) {
   VisitExpr(E);
 }

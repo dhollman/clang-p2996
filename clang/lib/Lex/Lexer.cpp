@@ -4470,6 +4470,20 @@ LexStart:
 
     if (LangOpts.Reflection) {
       Kind = tok::backslash;
+      constexpr char id_str[] = "id";
+      constexpr char tokens_str[] = "tokens";
+      Char = getCharAndSize(CurPtr, SizeTmp);
+      if (BufferPtr + sizeof(id_str) <= BufferEnd &&
+          std::string_view(CurPtr, sizeof(id_str) - 1) == id_str) {
+        // TODO(dhollman) maybe ignore whitespace??!?
+        Kind = tok::id_interp;
+        CurPtr += sizeof(id_str) - 1;
+      } else if (BufferPtr + sizeof(tokens_str) <= BufferEnd &&
+                 std::string_view(CurPtr, sizeof(tokens_str) - 1) ==
+                     tokens_str) {
+        Kind = tok::tokens_interp;
+        CurPtr += sizeof(tokens_str) - 1;
+      }
       break;
     }
 

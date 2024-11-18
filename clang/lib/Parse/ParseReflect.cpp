@@ -394,72 +394,69 @@ ExprResult Parser::ParseCXXTokenSequenceExpression(SourceLocation OpLoc) {
   // ^^{ += \tokens(x) }
   SmallVector<TokenSequenceItem, 32> Items;
   while (BraceCount - Tok.is(tok::r_brace) > StartingBraceDepth) {
-    if (Tok.is(tok::backslash)) {
-      // TODO(dhollman) store the source location of the backslash somewhere
+    // ----------------------------------------
+    // Handle \tokens
+    if (Tok.is(tok::tokens_interp)) {
+      ConsumeToken(); // Consume the '\tokens' token
+      // TODO(dhollman) Maybe be a little more DRY?
+      BalancedDelimiterTracker Interp(*this, tok::l_paren);
+      if (Interp.expectAndConsume())
+        return ExprError();
+      ExprResult ER = ParseConstantExpression();
+
+      if (Interp.consumeClose())
+        return ExprError();
+
+      if (ER.isInvalid()) {
+        Tokens.skipToEnd();
+        return ExprError();
+      }
+
+      Items.push_back(TokenSequenceItem::FromTokensInterpolator(ER.get()));
+    }
+    // ----------------------------------------
+    // Handle \id
+    else if (Tok.is(tok::id_interp)) {
+      ConsumeToken(); // Consume the '\id' token
+      BalancedDelimiterTracker Parens(*this, tok::l_paren);
+      if (Parens.expectAndConsume())
+        return ExprError();
+
+      SmallVector<Expr *, 2> Args;
+      do {
+        ExprResult Expr = ParseConstantExpression();
+        if (Expr.isInvalid()) {
+          Parens.skipToEnd();
+          return ExprError();
+        }
+        Args.push_back(Expr.get());
+      } while (TryConsumeToken(tok::comma));
+
+      if (Parens.consumeClose())
+        return ExprError();
+
+      unsigned iArg = 0;
+      for (auto *E : Args) {
+        Items.push_back(TokenSequenceItem::FromIdInterpolator(E, iArg++));
+      }
+    }
+    // ----------------------------------------
+    // Handle \(...) interpolators
+    else if (Tok.is(tok::backslash)) {
       ConsumeToken();
-      // ----------------------------------------
-      // Handle \tokens
-      if (Tok.is(tok::kw_tokens)) {
-        ConsumeToken(); // Consume the 'tokens' token
-        // TODO(dhollman) Maybe be a little more DRY?
-        BalancedDelimiterTracker Interp(*this, tok::l_paren);
-        if (Interp.expectAndConsume())
-          return ExprError();
-        ExprResult ER = ParseConstantExpression();
+      BalancedDelimiterTracker Parens(*this, tok::l_paren);
+      if (Parens.expectAndConsume())
+        return ExprError();
 
-        if (Interp.consumeClose())
-          return ExprError();
+      ExprResult ER = ParseConstantExpression();
 
-        if (ER.isInvalid()) {
-          Tokens.skipToEnd();
-          return ExprError();
-        }
+      if (Parens.consumeClose())
+        return ExprError();
 
-        Items.push_back(TokenSequenceItem::FromTokensInterpolator(ER.get()));
-
-      }
-      // ----------------------------------------
-      // Handle \id
-      else if (Tok.is(tok::kw_id)) {
-        ConsumeToken(); // Consume the 'id' token
-        BalancedDelimiterTracker Parens(*this, tok::l_paren);
-        if (Parens.expectAndConsume())
-          return ExprError();
-
-        SmallVector<Expr *, 2> Args;
-        do {
-          ExprResult Expr = ParseConstantExpression();
-          if (Expr.isInvalid()) {
-            Parens.skipToEnd();
-            return ExprError();
-          }
-          Args.push_back(Expr.get());
-        } while (TryConsumeToken(tok::comma));
-
-        if (Parens.consumeClose())
-          return ExprError();
-
-        unsigned iArg = 0;
-        for (auto *E : Args) {
-          Items.push_back(TokenSequenceItem::FromIdInterpolator(E, iArg++));
-        }
-      }
-      // ----------------------------------------
-      // Handle \(...) interpolators
-      else {
-        BalancedDelimiterTracker Parens(*this, tok::l_paren);
-        if (Parens.expectAndConsume())
-          return ExprError();
-
-        ExprResult ER = ParseConstantExpression();
-
-        if (Parens.consumeClose())
-          return ExprError();
-
-        Items.push_back(TokenSequenceItem::FromExprInterpolator(ER.get()));
-      }
-      // ----------------------------------------
-    } else {
+      Items.push_back(TokenSequenceItem::FromExprInterpolator(ER.get()));
+    }
+    // ----------------------------------------
+    else {
       // Just a regular token
       Items.push_back(TokenSequenceItem::FromToken(Tok));
       ConsumeAnyToken();
@@ -472,4 +469,40 @@ ExprResult Parser::ParseCXXTokenSequenceExpression(SourceLocation OpLoc) {
   SourceLocation LBraceLoc = Tokens.getOpenLocation();
   SourceLocation RBraceLoc = Tokens.getCloseLocation();
   return Actions.ActOnCXXTokenSequenceExpr(OpLoc, LBraceLoc, Items, RBraceLoc);
+}
+
+ExprResult Parser::ParseCXXQueueInjectionExpr() {
+  assert(Tok.is(tok::kw___queue_injection) &&
+         "expected 'queue_injection' keyword");
+
+  auto KWLoc = ConsumeToken();
+
+  BalancedDelimiterTracker Parens(*this, tok::l_paren);
+  if (Parens.expectAndConsume())
+    return ExprError();
+
+  // Consume the argument
+  ExprResult Expr = ParseConstantExpression();
+  if (Expr.isInvalid()) {
+    Parens.skipToEnd();
+    return ExprError();
+  }
+
+  Parens.consumeClose();
+
+  SourceLocation LBraceLoc = Parens.getOpenLocation();
+  SourceLocation RBraceLoc = Parens.getCloseLocation();
+
+  return Actions.ActOnCXXQueueInjectionExpr(KWLoc, LBraceLoc, Expr.get(),
+                                            RBraceLoc, this);
+}
+
+bool Parser::InjectQueuedTokenSequence(const CXXQueueInjectionExpr *E) {
+  // TODO(dhollman) handle id interpolators and expression interpolators
+  SmallVector<Token, 32> Toks{E->getAPValue().getTokenSequenceTokens()};
+  // TODO this is really more like "push_injection", not "queue_injection"
+  PP.EnterToken(Tok, true);
+  PP.EnterTokenStream(Toks, true, true);
+  PP.Lex(Tok);
+  return true;
 }

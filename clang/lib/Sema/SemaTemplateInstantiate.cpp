@@ -34,6 +34,7 @@
 #include "clang/Sema/EnterExpressionEvaluationContext.h"
 #include "clang/Sema/Initialization.h"
 #include "clang/Sema/Lookup.h"
+#include "clang/Sema/Ownership.h"
 #include "clang/Sema/Sema.h"
 #include "clang/Sema/SemaConcept.h"
 #include "clang/Sema/SemaInternal.h"
@@ -1567,6 +1568,15 @@ namespace {
     ExprResult TransformDeclRefExpr(DeclRefExpr *E);
     ExprResult TransformCXXReflectExpr(CXXReflectExpr *E);
     ExprResult TransformCXXTokenSequenceExpr(CXXTokenSequenceExpr *E);
+    ExprResult TransformCXXQueueInjectionExpr(CXXQueueInjectionExpr *E) {
+      // TODO(dhollman) write this
+      return ExprError();
+    }
+    ExprResult TransformExprWithTrailingInjectedTokenSequence(
+        ExprWithTrailingInjectedTokenSequence *E) {
+      // TODO(dhollman) write this
+      return ExprError();
+    }
     ExprResult TransformCXXDefaultArgExpr(CXXDefaultArgExpr *E);
 
     ExprResult TransformTemplateParmRefExpr(Expr *E,

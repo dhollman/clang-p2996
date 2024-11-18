@@ -3538,6 +3538,149 @@ public:
   }
 };
 
+/// P3294: Represents an expr with statement(s) injected into the AST
+/// at the spot right after a contant evaluation
+/// context ends where any `queue_injection` expressions can
+/// inject their tokens. It holds the compound statement as
+/// a child once the `queue_injection` expressions have been
+/// evaluated, and serves as a placeholder in the AST until then
+/// TODO(dhollman@blocking) implement the member functions of this class!!
+class ExprWithTrailingInjectedTokenSequence final
+    : public Expr,
+      private llvm::TrailingObjects<ExprWithTrailingInjectedTokenSequence,
+                                    Expr *, Stmt *> {
+private:
+  friend TrailingObjects;
+
+  Expr *subExpr;
+  unsigned NumQueuedExprs;
+  unsigned NumStmts;
+
+  // There's only one source location for the whole sequence, since there are no
+  // tokens there in the source itself.
+  SourceLocation InjectionLoc;
+
+  // TODO(dhollman@later) maybe store pointers to the CXXTokenSequenceExprs and
+  // `queue_injection` sites that generated this compound statement for better
+  // diagnostics?
+
+  ExprWithTrailingInjectedTokenSequence(const ASTContext &C, Expr *subExpr,
+                                        ArrayRef<Stmt *> Stmts);
+  ExprWithTrailingInjectedTokenSequence(const ASTContext &C, Expr *subExpr,
+                                        ArrayRef<Expr *> QueuedExprs);
+  // explicit ExprWithTrailingInjectedTokenSequence(EmptyShell Empty);
+
+  unsigned numTrailingObjects(OverloadToken<Stmt *>) const { return NumStmts; }
+  unsigned numTrailingObjects(OverloadToken<Expr *>) const {
+    return NumQueuedExprs;
+  }
+
+public:
+  static ExprWithTrailingInjectedTokenSequence *
+  Create(const ASTContext &C, SourceLocation InjectionLoc, Expr *subExpr,
+         ArrayRef<Stmt *> Stmts);
+  static ExprWithTrailingInjectedTokenSequence *
+  Create(const ASTContext &C, SourceLocation InjectionLoc, Expr *subExpr,
+         ArrayRef<Expr *> QueuedExprs);
+  // TODO(dhollman) implement this for serialization
+  // ExprWithTrailingInjectedTokenSequence *CreateEmpty(const ASTContext &C);
+
+  ArrayRef<Stmt *> getStatements() const {
+    return {getTrailingObjects<Stmt *>(), NumStmts};
+  }
+
+  SourceLocation getBeginLoc() const { return InjectionLoc; }
+  SourceLocation getEndLoc() const { return InjectionLoc; }
+  SourceRange getSourceRange() const {
+    return SourceRange(getBeginLoc(), getEndLoc());
+  }
+
+  child_range children() {
+    return child_range(getTrailingObjects<Stmt *>(),
+                       getTrailingObjects<Stmt *>() + NumStmts);
+  }
+
+  const_child_range children() const {
+    return const_child_range(getTrailingObjects<Stmt *>(),
+                             getTrailingObjects<Stmt *>() + NumStmts);
+  }
+
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == ExprWithTrailingInjectedTokenSequenceClass;
+  }
+};
+
+// Represents a `queue_injection` call (P3294)
+class CXXQueueInjectionExpr final
+    : public Expr,
+      llvm::TrailingObjects<CXXQueueInjectionExpr, APValue> {
+private:
+  friend TrailingObjects;
+  void *opaqueParser;
+
+  SourceLocation KWLoc;
+  SourceRange ParenRange;
+  Expr *subExpr;
+
+  unsigned numTrailingObjects(OverloadToken<APValue>) const {
+    return subExpr->getDependence() == ExprDependence::None;
+  }
+
+  CXXQueueInjectionExpr(const ASTContext &C, Expr *subExpr,
+                        APValue const &value, void *OpaqueParser);
+
+  void setAPValue(APValue const &value) {
+    *getTrailingObjects<APValue>() = value;
+  }
+
+public:
+  static CXXQueueInjectionExpr *Create(const ASTContext &C,
+                                       SourceLocation KWLoc,
+                                       SourceRange ParenRange, Expr *SubExpr,
+                                       void *OpaqueParser);
+  static CXXQueueInjectionExpr *Create(const ASTContext &C,
+                                       SourceLocation KWLoc,
+                                       SourceRange ParenRange, Expr *Child,
+                                       APValue const &Toks, void *OpaqueParser);
+  bool IsDependent() const {
+    return subExpr->getDependence() != ExprDependence::None;
+  }
+
+  Expr *getSubExpr() const {
+    assert(IsDependent() && "getSubExpr only valid for dependent "
+                            "QueueInjectionExprs");
+    return subExpr;
+  }
+
+  void *getOpaqueParser() const { return opaqueParser; }
+
+  APValue const &getAPValue() const {
+    assert(!IsDependent() && "getAPValue only valid for non-dependent "
+                             "QueueInjectionExprs");
+    return *getTrailingObjects<APValue>();
+  }
+
+  SourceLocation getBeginLoc() const { return KWLoc; }
+  SourceLocation getEndLoc() const { return ParenRange.getEnd(); }
+  SourceRange getSourceRange() const {
+    return SourceRange(getBeginLoc(), getEndLoc());
+  }
+
+  child_range children() {
+    return child_range(reinterpret_cast<Stmt **>(&subExpr),
+                       reinterpret_cast<Stmt **>(&subExpr) + 1);
+  }
+
+  const_child_range children() const {
+    return const_child_range(reinterpret_cast<Stmt *const *>(&subExpr),
+                             reinterpret_cast<Stmt *const *>(&subExpr) + 1);
+  }
+
+  static bool classof(const Stmt *T) {
+    return T->getStmtClass() == CXXQueueInjectionExprClass;
+  }
+};
+
 /// Describes an explicit type conversion that uses functional
 /// notion but could not be resolved because one or more arguments are
 /// type-dependent.

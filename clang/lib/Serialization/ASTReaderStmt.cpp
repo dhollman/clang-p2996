@@ -526,6 +526,16 @@ void ASTStmtReader::VisitCXXTokenSequenceExpr(CXXTokenSequenceExpr *E) {
   // }
 }
 
+void ASTStmtReader::VisitExprWithTrailingInjectedTokenSequence(
+    ExprWithTrailingInjectedTokenSequence *E) {
+  // TODO
+}
+
+void ASTStmtReader::VisitCXXQueueInjectionExpr(CXXQueueInjectionExpr *E) {
+
+  // TODO
+}
+
 void ASTStmtReader::VisitCXXMetafunctionExpr(CXXMetafunctionExpr *E) {
   VisitExpr(E);
   E->setKwLoc(Record.readSourceLocation());

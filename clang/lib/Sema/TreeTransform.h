@@ -8981,6 +8981,23 @@ TreeTransform<Derived>::TransformCXXTokenSequenceExpr(CXXTokenSequenceExpr *E) {
 }
 
 template <typename Derived>
+ExprResult TreeTransform<Derived>::TransformCXXQueueInjectionExpr(
+    CXXQueueInjectionExpr *E) {
+  // TODO(dhollman): Implement this.
+
+  return E;
+}
+
+template <typename Derived>
+ExprResult
+TreeTransform<Derived>::TransformExprWithTrailingInjectedTokenSequence(
+    ExprWithTrailingInjectedTokenSequence *E) {
+  // TODO(dhollman): Implement this.
+
+  return E;
+}
+
+template <typename Derived>
 ExprResult
 TreeTransform<Derived>::TransformCXXMetafunctionExpr(CXXMetafunctionExpr *E) {
   SmallVector<Expr *, 2> Args(E->getNumArgs());

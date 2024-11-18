@@ -991,7 +991,7 @@ ExprResult Sema::BuildCXXTokenSequenceExpr(SourceLocation KWLoc,
                                            ArrayRef<TokenSequenceItem> Items,
                                            SourceLocation RParenLoc) {
   SmallVector<Token, 32> Toks;
-  SmallVector<APValue, 4> Interps;
+  SmallVector<std::pair<Expr *, APValue>, 4> Interps;
   SmallVector<TokenSequenceItem> DepExprs;
   SmallVector<Expr *> Children;
   bool IsDependent = false;
@@ -1057,6 +1057,7 @@ ExprResult Sema::BuildCXXTokenSequenceExpr(SourceLocation KWLoc,
         assert(InterpOperand->getDependence() == ExprDependence::None &&
                "Expression shouldn't be dependent at this point");
 
+        // TODO(dhollman) should this be "evaluate as constant expression?"
         Expr::EvalResult TokOpER;
         if (!InterpOperand->EvaluateAsRValue(TokOpER, Context)) {
           // TODO diagnostic
@@ -1076,21 +1077,21 @@ ExprResult Sema::BuildCXXTokenSequenceExpr(SourceLocation KWLoc,
           if (T.getKind() == tok::annot_id_interpolator ||
               T.getKind() == tok::annot_expr_interpolator) {
             assert(result_interp_spot != ResultInterps.end());
-            const APValue &interp = *result_interp_spot++;
+            const auto &interp = *result_interp_spot++;
             if (!IsDependent) {
               Toks.push_back(T);
-              Interps.push_back(interp);
+              Interps.push_back({InterpOperand, interp.second});
             }
             // Now we need to create items for each entry in the interpolator
             // in case we're still dependent and need to construct a sequence
             // of TokenSequenceItems for the return value
-            SmallVector<APValue, 2> InterpsForCurrent;
-            InterpsForCurrent.push_back(interp);
+            SmallVector<std::pair<Expr *, APValue>, 2> InterpsForCurrent;
+            InterpsForCurrent.push_back({InterpOperand, interp.second});
             if (T.getKind() == tok::annot_id_interpolator) {
-              assert(interp.isInt() &&
+              assert(interp.second.isInt() &&
                      "First APValue for an \\id(...) interpolator should be "
                      "the number of arguments");
-              auto num_args = (unsigned)interp.getInt().getLimitedValue(
+              auto num_args = (unsigned)interp.second.getInt().getLimitedValue(
                   std::numeric_limits<unsigned>::max());
               for (unsigned i = 0; i < num_args; ++i) {
                 assert(result_interp_spot != ResultInterps.end());
@@ -1176,17 +1177,23 @@ ExprResult Sema::BuildCXXTokenSequenceExpr(SourceLocation KWLoc,
             Args.push_back(ArgER.Val);
           }
 
-          SmallVector<APValue, 2> InterpsForCurrent;
+          SmallVector<std::pair<Expr *, APValue>, 2> InterpsForCurrent;
           if (!IsDependent)
             Toks.push_back(placeholder);
           bool first = true;
+          auto ArgExprsSpot = ArgExprs.begin();
           for (auto &Arg : Args) {
             if (!first) {
-              InterpsForCurrent.push_back(Arg);
-            } else
-              first = false;
+              // TODO(dhollman) fix this!!!!
+              InterpsForCurrent.push_back({*ArgExprsSpot, Arg});
+            }
             if (!IsDependent)
-              Interps.push_back(Arg);
+              Interps.push_back({*ArgExprsSpot, Arg});
+            if (first) {
+              first = false;
+            } else {
+              ++ArgExprsSpot;
+            }
           }
           DepExprs.push_back(TokenSequenceItem::FromResolvedInterpolator(
               APValue({&placeholder, 1}, InterpsForCurrent)));
@@ -1218,11 +1225,12 @@ ExprResult Sema::BuildCXXTokenSequenceExpr(SourceLocation KWLoc,
 
         if (!IsDependent) {
           Toks.push_back(placeholder);
-          Interps.push_back(ArgER.Val);
+          Interps.push_back({ArgOperand, ArgER.Val});
         }
 
+        auto Pair = std::pair{ArgOperand, ArgER.Val};
         DepExprs.push_back(TokenSequenceItem::FromResolvedInterpolator(
-            APValue({&placeholder, 1}, {&ArgER.Val, 1})));
+            APValue({&placeholder, 1}, {&Pair, 1})));
       } else {
         assert(Item.isResolvedInterpolator());
         DepExprs.push_back(Item);
@@ -1897,4 +1905,50 @@ DeclContext *Sema::TryFindDeclContextOf(const Expr *E) {
     return nullptr;
   }
   llvm_unreachable("unknown reflection kind");
+}
+
+ExprResult Sema::ActOnCXXQueueInjectionExpr(SourceLocation KWLoc,
+                                            SourceLocation LParenLoc, Expr *E,
+                                            SourceLocation RParenLoc,
+                                            void *OpaqueParser) {
+  return BuildCXXQueueInjectionExpr(KWLoc, LParenLoc, E, RParenLoc,
+                                    OpaqueParser);
+}
+
+ExprResult Sema::BuildCXXQueueInjectionExpr(SourceLocation KWLoc,
+                                            SourceLocation LParenLoc, Expr *E,
+                                            SourceLocation RParenLoc,
+                                            void *OpaqueParser) {
+  ExprResult RV = E;
+
+  RV = DefaultLvalueConversion(RV.get());
+  if (RV.isInvalid()) {
+    return ExprError();
+  }
+
+  if (!RV.get()->isTypeDependent() && !RV.get()->isValueDependent()) {
+    if (RV.get()->getType() != Context.MetaInfoTy) {
+      RV = PerformImplicitConversion(RV.get(), Context.MetaInfoTy,
+                                     AssignmentAction::Converting, false);
+      if (RV.isInvalid()) {
+        return ExprError();
+      }
+    }
+
+    Expr::EvalResult ER;
+    if (!RV.get()->EvaluateAsConstantExpr(ER, Context)) {
+      // TODO diagnostic
+      return ExprError();
+    }
+
+    // TODO(dhollman) this should be diagnosed
+    assert(ER.Val.isTokenSequence() &&
+           "Interpolated \\tokens(...) expression must be a token sequence");
+
+    return CXXQueueInjectionExpr::Create(Context, KWLoc, {LParenLoc, RParenLoc},
+                                         RV.get(), ER.Val, OpaqueParser);
+  } else {
+    return CXXQueueInjectionExpr::Create(Context, KWLoc, {LParenLoc, RParenLoc},
+                                         RV.get(), OpaqueParser);
+  }
 }

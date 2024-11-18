@@ -2659,6 +2659,17 @@ void StmtPrinter::VisitCXXTokenSequenceExpr(CXXTokenSequenceExpr *S) {
   OS << "^(...)";
 }
 
+void StmtPrinter::VisitCXXQueueInjectionExpr(CXXQueueInjectionExpr *S) {
+  // FIXME: Make this better.
+  OS << "^(...)";
+}
+
+void StmtPrinter::VisitExprWithTrailingInjectedTokenSequence(
+    ExprWithTrailingInjectedTokenSequence *S) {
+  // FIXME: Make this better.
+  OS << "^(...)";
+}
+
 void StmtPrinter::VisitCXXSpliceSpecifierExpr(CXXSpliceSpecifierExpr *S) {
   OS << "[: ";
   Visit(S->getOperand());

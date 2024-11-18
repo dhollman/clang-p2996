@@ -786,8 +786,8 @@ void TextNodeDumper::Visit(const APValue &Value, QualType Ty) {
     for (const auto &Token : Tokens) {
       if (Token.is(tok::annot_id_interpolator)) {
         assert(interp_spot != Interpolators.end());
-        const APValue &interp = *interp_spot++;
-        auto num_args = (unsigned)interp.getInt().getLimitedValue(
+        const auto &interp = *interp_spot++;
+        auto num_args = (unsigned)interp.second.getInt().getLimitedValue(
             std::numeric_limits<unsigned>::max());
         OS << "\\id(";
         // TODO(dhollman) fix (?) dumpAPValueChildren
@@ -802,13 +802,13 @@ void TextNodeDumper::Visit(const APValue &Value, QualType Ty) {
         for (unsigned i = 0; i < num_args; ++i) {
           if (i)
             OS << ", ";
-          Visit(*interp_spot++, Ty);
+          Visit((*interp_spot++).second, Ty);
         }
         OS << ") ";
       } else if (Token.is(tok::annot_expr_interpolator)) {
         assert(interp_spot != Interpolators.end());
         OS << "\\(";
-        Visit(*interp_spot++, Ty);
+        Visit((*interp_spot++).second, Ty);
         OS << ") ";
       } else {
         OS << Token.getName() << ' ';

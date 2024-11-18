@@ -484,6 +484,15 @@ void ASTStmtWriter::VisitCXXTokenSequenceExpr(CXXTokenSequenceExpr *E) {
   // TODO(dhollman): implement this
 }
 
+void ASTStmtWriter::VisitCXXQueueInjectionExpr(CXXQueueInjectionExpr *E) {
+  // TODO(dhollman): implement this
+}
+
+void ASTStmtWriter::VisitExprWithTrailingInjectedTokenSequence(
+    ExprWithTrailingInjectedTokenSequence *E) {
+  // TODO(dhollman): implement this
+}
+
 void ASTStmtWriter::VisitCXXMetafunctionExpr(CXXMetafunctionExpr *E) {
   VisitExpr(E);
   Record.AddSourceLocation(E->getKwLoc());

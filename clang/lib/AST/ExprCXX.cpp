@@ -2446,3 +2446,88 @@ TokenSequenceItem::FromItemAndNewExpr(TokenSequenceItem const &Item, Expr *E) {
   new ((Expr **)(void *)&TSI.Operand) Expr *(E);
   return TSI;
 }
+
+clang::CXXQueueInjectionExpr *
+clang::CXXQueueInjectionExpr::Create(const ASTContext &C, SourceLocation KWLoc,
+                                     SourceRange ParenRange, Expr *Child,
+                                     APValue const &Toks, void *OpaqueParser) {
+  assert(Child->getDependence() == ExprDependence::None);
+  void *Mem = C.Allocate(totalSizeToAlloc<APValue>(1));
+  auto *RV = new (Mem) CXXQueueInjectionExpr(C, Child, Toks, OpaqueParser);
+  RV->KWLoc = KWLoc;
+  RV->ParenRange = ParenRange;
+  return RV;
+}
+
+clang::CXXQueueInjectionExpr *
+clang::CXXQueueInjectionExpr::Create(const ASTContext &C, SourceLocation KWLoc,
+                                     SourceRange ParenRange, Expr *SubExpr,
+                                     void *OpaqueParser) {
+  auto *RV = new (C) CXXQueueInjectionExpr(C, SubExpr, APValue(), OpaqueParser);
+  RV->KWLoc = KWLoc;
+  RV->ParenRange = ParenRange;
+  return RV;
+}
+
+clang::CXXQueueInjectionExpr::CXXQueueInjectionExpr(const ASTContext &C,
+                                                    Expr *subExpr,
+                                                    APValue const &value,
+                                                    void *OpaqueParser)
+    : Expr(CXXQueueInjectionExprClass, C.VoidTy, VK_PRValue, OK_Ordinary),
+
+      opaqueParser(OpaqueParser), subExpr(subExpr) {
+  setDependence(subExpr->getDependence());
+  if (!IsDependent()) {
+    setAPValue(value);
+  }
+}
+
+ExprWithTrailingInjectedTokenSequence *
+ExprWithTrailingInjectedTokenSequence::Create(const ASTContext &C,
+                                              SourceLocation InjectionLoc,
+                                              Expr *subExpr,
+                                              ArrayRef<Stmt *> Stmts) {
+  void *Mem = C.Allocate(totalSizeToAlloc<Expr *, Stmt *>(0, Stmts.size()));
+  auto *RV = new (Mem) ExprWithTrailingInjectedTokenSequence(C, subExpr, Stmts);
+  RV->InjectionLoc = InjectionLoc;
+  return RV;
+}
+
+ExprWithTrailingInjectedTokenSequence *
+ExprWithTrailingInjectedTokenSequence::Create(const ASTContext &C,
+                                              SourceLocation InjectionLoc,
+                                              Expr *subExpr,
+                                              ArrayRef<Expr *> QueuedExprs) {
+  void *Mem =
+      C.Allocate(totalSizeToAlloc<Expr *, Stmt *>(QueuedExprs.size(), 0));
+  auto *RV =
+      new (Mem) ExprWithTrailingInjectedTokenSequence(C, subExpr, QueuedExprs);
+  RV->InjectionLoc = InjectionLoc;
+  return RV;
+}
+
+ExprWithTrailingInjectedTokenSequence::ExprWithTrailingInjectedTokenSequence(
+    const ASTContext &C, Expr *subE, ArrayRef<Stmt *> Stmts)
+    : Expr(ExprWithTrailingInjectedTokenSequenceClass,
+           // TODO(dhollman) Handle non-void return types? Or make this a Stmt
+           // subclass?
+           C.VoidTy, VK_PRValue, OK_Ordinary),
+      subExpr(subE), NumQueuedExprs(0), NumStmts((unsigned)Stmts.size()) {
+  Stmt **spot = getTrailingObjects<Stmt *>();
+  for (auto *S : Stmts) {
+    *(spot++) = S;
+  }
+}
+ExprWithTrailingInjectedTokenSequence::ExprWithTrailingInjectedTokenSequence(
+    const ASTContext &C, Expr *subE, ArrayRef<Expr *> QueuedExprs)
+    : Expr(ExprWithTrailingInjectedTokenSequenceClass,
+           // TODO(dhollman) Handle non-void return types? Or make this a Stmt
+           // subclass?
+           C.VoidTy, VK_PRValue, OK_Ordinary),
+      subExpr(subE), NumQueuedExprs((unsigned)QueuedExprs.size()), NumStmts(0) {
+
+  Expr **spot = getTrailingObjects<Expr *>();
+  for (auto *Q : QueuedExprs) {
+    *(spot++) = Q;
+  }
+}

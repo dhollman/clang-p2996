@@ -56,8 +56,10 @@
 #include "clang/Basic/Builtins.h"
 #include "clang/Basic/DiagnosticSema.h"
 #include "clang/Basic/TargetInfo.h"
+#include "clang/Parse/Parser.h"
 #include "llvm/ADT/APFixedPoint.h"
 #include "llvm/ADT/SmallBitVector.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/SaveAndRestore.h"
@@ -5109,6 +5111,8 @@ struct StmtResult {
   const LValue *Slot;
 };
 
+using InterpStmtResult = StmtResult;
+
 struct TempVersionRAII {
   CallStackFrame &Frame;
 
@@ -5123,12 +5127,12 @@ struct TempVersionRAII {
 
 }
 
-static EvalStmtResult EvaluateStmt(StmtResult &Result, EvalInfo &Info,
+static EvalStmtResult EvaluateStmt(InterpStmtResult &Result, EvalInfo &Info,
                                    const Stmt *S,
                                    const SwitchCase *SC = nullptr);
 
 /// Evaluate the body of a loop, and translate the result as appropriate.
-static EvalStmtResult EvaluateLoopBody(StmtResult &Result, EvalInfo &Info,
+static EvalStmtResult EvaluateLoopBody(InterpStmtResult &Result, EvalInfo &Info,
                                        const Stmt *Body,
                                        const SwitchCase *Case = nullptr) {
   BlockScopeRAII Scope(Info);
@@ -5152,7 +5156,7 @@ static EvalStmtResult EvaluateLoopBody(StmtResult &Result, EvalInfo &Info,
 }
 
 /// Evaluate a switch statement.
-static EvalStmtResult EvaluateSwitch(StmtResult &Result, EvalInfo &Info,
+static EvalStmtResult EvaluateSwitch(InterpStmtResult &Result, EvalInfo &Info,
                                      const SwitchStmt *SS) {
   BlockScopeRAII Scope(Info);
 
@@ -5245,7 +5249,7 @@ static bool CheckLocalVariableDeclaration(EvalInfo &Info, const VarDecl *VD) {
 }
 
 // Evaluate a statement.
-static EvalStmtResult EvaluateStmt(StmtResult &Result, EvalInfo &Info,
+static EvalStmtResult EvaluateStmt(InterpStmtResult &Result, EvalInfo &Info,
                                    const Stmt *S, const SwitchCase *Case) {
   if (!Info.nextStep(S))
     return ESR_Failed;
@@ -6476,7 +6480,7 @@ static bool HandleFunctionCall(SourceLocation CallLoc,
                                         Frame.LambdaThisCaptureField);
   }
 
-  StmtResult Ret = {Result, ResultSlot};
+  InterpStmtResult Ret = {Result, ResultSlot};
   EvalStmtResult ESR = EvaluateStmt(Ret, Info, Body);
   if (ESR == ESR_Succeeded) {
     if (Callee->getReturnType()->isVoidType())
@@ -6510,7 +6514,7 @@ static bool HandleConstructorCall(const Expr *E, const LValue &This,
   // FIXME: Creating an APValue just to hold a nonexistent return value is
   // wasteful.
   APValue RetVal;
-  StmtResult Ret = {RetVal, nullptr};
+  InterpStmtResult Ret = {RetVal, nullptr};
 
   // If it's a delegating constructor, delegate.
   if (Definition->isDelegatingConstructor()) {
@@ -6837,7 +6841,7 @@ static bool HandleDestructionImpl(EvalInfo &Info, SourceRange CallRange,
   // FIXME: Creating an APValue just to hold a nonexistent return value is
   // wasteful.
   APValue RetVal;
-  StmtResult Ret = {RetVal, nullptr};
+  InterpStmtResult Ret = {RetVal, nullptr};
   if (EvaluateStmt(Ret, Info, Definition->getBody()) == ESR_Failed)
     return false;
 
@@ -8429,7 +8433,7 @@ public:
       }
 
       APValue ReturnValue;
-      StmtResult Result = { ReturnValue, nullptr };
+      InterpStmtResult Result = {ReturnValue, nullptr};
       EvalStmtResult ESR = EvaluateStmt(Result, Info, *BI);
       if (ESR != ESR_Succeeded) {
         // FIXME: If the statement-expression terminated due to 'return',
@@ -8475,6 +8479,12 @@ public:
   }
 
   bool VisitStackLocationExpr(const StackLocationExpr *E);
+
+  bool VisitCXXQueueInjectionExpr(const CXXQueueInjectionExpr *E) {
+    // TODO(dhollman) write this better!
+    Parser &P = *(Parser *)(E->getOpaqueParser());
+    return P.InjectQueuedTokenSequence(E);
+  }
 };
 
 /// EvaluateAsRValue - Try to evaluate this expression, performing an implicit

@@ -326,11 +326,13 @@ private:
     // that is an annot_expr_interpolator, this array contains the APValue
     // of the evaluated expression. For non-interpolators, this array doesn't
     // have an entry.
-    APValue *EvaluatedInterpolators;
+    std::pair<Expr *, APValue> *EvaluatedInterpolators;
     unsigned NumEvaluatedInterpolators;
-    TokenSequenceData(ArrayRef<Token> Tokens, ArrayRef<APValue> Interpolators)
+    TokenSequenceData(ArrayRef<Token> Tokens,
+                      ArrayRef<std::pair<Expr *, APValue>> Interpolators)
         : Tokens(new Token[Tokens.size()]), NumTokens((unsigned)Tokens.size()),
-          EvaluatedInterpolators(new APValue[Interpolators.size()]),
+          EvaluatedInterpolators(
+              new std::pair<Expr *, APValue>[Interpolators.size()]),
           NumEvaluatedInterpolators((unsigned)Interpolators.size()) {
       std::copy(Tokens.begin(), Tokens.end(), this->Tokens);
       std::copy(Interpolators.begin(), Interpolators.end(),
@@ -425,7 +427,8 @@ public:
       : Kind(None), UnderlyingTy(), ReflectionDepth() {
     MakeReflection(); setReflection(RK, Data);
   }
-  explicit APValue(ArrayRef<Token> T, ArrayRef<APValue> Interpolators)
+  explicit APValue(ArrayRef<Token> T,
+                   ArrayRef<std::pair<Expr *, APValue>> Interpolators)
       : Kind(None), UnderlyingTy(), ReflectionDepth() {
     MakeTokenSequence(T, Interpolators);
   }
@@ -704,7 +707,8 @@ public:
     return {((const TokenSequenceData *)(const char *)&Data)->Tokens,
             ((const TokenSequenceData *)(const char *)&Data)->NumTokens};
   }
-  const ArrayRef<APValue> getTokenSequenceInterpolators() const {
+  const ArrayRef<std::pair<Expr *, APValue>>
+  getTokenSequenceInterpolators() const {
     assert(Kind == TokenSequence && "Invalid accessor");
     return {((const TokenSequenceData *)(const char *)&Data)
                 ->EvaluatedInterpolators,
@@ -771,8 +775,9 @@ public:
     ((AddrLabelDiffData *)(char *)&Data)->RHSExpr = RHSExpr;
   }
   void setReflection(ReflectionKind RK, const void *Data);
-  void setTokenSequence(ArrayRef<Token> Tokens,
-                        ArrayRef<APValue> EvaluatedInterpolators);
+  void
+  setTokenSequence(ArrayRef<Token> Tokens,
+                   ArrayRef<std::pair<Expr *, APValue>> EvaluatedInterpolators);
 
 private:
   void DestroyDataAndMakeUninit();
@@ -832,7 +837,7 @@ private:
     Kind = Reflection;
   }
 
-  void MakeTokenSequence(ArrayRef<Token>, ArrayRef<APValue>);
+  void MakeTokenSequence(ArrayRef<Token>, ArrayRef<std::pair<Expr *, APValue>>);
 
 private:
   /// The following functions are used as part of initialization, during

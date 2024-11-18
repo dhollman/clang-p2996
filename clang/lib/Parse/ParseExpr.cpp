@@ -24,6 +24,7 @@
 
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/Availability.h"
+#include "clang/AST/Expr.h"
 #include "clang/AST/ExprCXX.h"
 #include "clang/AST/LocInfoType.h"
 #include "clang/Basic/PrettyStackTrace.h"
@@ -32,6 +33,7 @@
 #include "clang/Parse/RAIIObjectsForParser.h"
 #include "clang/Sema/DeclSpec.h"
 #include "clang/Sema/EnterExpressionEvaluationContext.h"
+#include "clang/Sema/Ownership.h"
 #include "clang/Sema/ParsedTemplate.h"
 #include "clang/Sema/Scope.h"
 #include "clang/Sema/SemaCUDA.h"
@@ -1434,6 +1436,24 @@ ExprResult Parser::ParseCastExpression(CastParseKind ParseKind,
   case tok::kw___null:
     Res = Actions.ActOnGNUNullExpr(ConsumeToken());
     break;
+
+  case tok::kw___queue_injection:
+    if (getLangOpts().Reflection) {
+      return ParseCXXQueueInjectionExpr();
+    } else {
+      // TODO Diagnostic
+      return ExprError();
+    }
+
+  case tok::annot_expr_interpolator: {
+    // TODO(dhollman) probably move this into Sema or something
+    // TODO(dhollman) probably do something with the SourceLocation?
+    auto &DataPair =
+        *(std::pair<Expr *, APValue> const *)Tok.getAnnotationValue();
+    ConsumeAnnotationToken();
+    return ConstantExpr::Create(Actions.Context, DataPair.first,
+                                DataPair.second);
+  }
 
   case tok::plusplus:      // unary-expression: '++' unary-expression [C99]
   case tok::minusminus: {  // unary-expression: '--' unary-expression [C99]

@@ -257,6 +257,8 @@ PUNCTUATOR(r_splice,            ":]")
 
 // C++2c Token Injection Support (P3294)
 PUNCTUATOR(backslash,           "\\")
+PUNCTUATOR(tokens_interp, "\\tokens")
+PUNCTUATOR(id_interp, "\\id")
 
 // Objective C support.
 PUNCTUATOR(at,                  "@")
@@ -438,8 +440,7 @@ CXX20_KEYWORD(requires              , 0)
 KEYWORD(__metafunction              , KEYREFLECT)
 
 // C++2c token injection keywords.
-KEYWORD(id                          , KEYREFLECT)
-KEYWORD(tokens                      , KEYREFLECT)
+KEYWORD(__queue_injection           , KEYREFLECT)
 
 // Not a CXX20_KEYWORD because it is disabled by -fno-char8_t.
 KEYWORD(char8_t                     , CHAR8SUPPORT)

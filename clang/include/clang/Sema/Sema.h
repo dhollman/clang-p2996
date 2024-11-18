@@ -8346,6 +8346,7 @@ public:
   /// Otherwise, just returns the passed-in expression.
   Expr *MaybeCreateExprWithCleanups(Expr *SubExpr);
   Stmt *MaybeCreateStmtWithCleanups(Stmt *SubStmt);
+  Expr *MaybeCreateExprWithTrailingInjectedTokenSequence(Expr *E);
   ExprResult MaybeCreateExprWithCleanups(ExprResult SubExpr);
 
   ExprResult ActOnFinishFullExpr(Expr *Expr, bool DiscardedValue) {
@@ -15211,6 +15212,10 @@ public:
                                        SourceLocation LParenLoc,
                                        ArrayRef<TokenSequenceItem> Tokens,
                                        SourceLocation RParenLoc);
+  ExprResult ActOnCXXQueueInjectionExpr(SourceLocation KWLoc,
+                                        SourceLocation LParenLoc, Expr *Expr,
+                                        SourceLocation RParenLoc,
+                                        void *OpaqueParser);
 
   ExprResult ActOnMemberAccessExpr(Scope *S, Expr *Base,
                                    SourceLocation OpLoc,
@@ -15245,6 +15250,10 @@ public:
                                        SourceLocation LParenLoc,
                                        ArrayRef<TokenSequenceItem> Tokens,
                                        SourceLocation RParenLoc);
+  ExprResult BuildCXXQueueInjectionExpr(SourceLocation KWLoc,
+                                        SourceLocation LParenLoc, Expr *Expr,
+                                        SourceLocation RParenLoc,
+                                        void *OpaqueParser);
 
   ExprResult BuildCXXMetafunctionExpr(SourceLocation KwLoc,
                                       SourceLocation LParenLoc,
